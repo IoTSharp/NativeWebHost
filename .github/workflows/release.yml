@@ -46,7 +46,8 @@ jobs:
         run: |
           dotnet restore OmniHost.sln
 
-          $projects = Get-ChildItem src -Recurse -Filter *.csproj | Sort-Object FullName
+          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE "src"
+          $projects = Get-ChildItem $sourceRoot -Recurse -Filter *.csproj | Sort-Object FullName
           foreach ($project in $projects) {
             dotnet restore $project.FullName
             if ($LASTEXITCODE -ne 0) {
