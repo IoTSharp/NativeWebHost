@@ -6,7 +6,7 @@ title: Getting Started
 
 ## Prerequisites
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download) or later
+- [.NET 10 SDK](https://dotnet.microsoft.com/download) or later
 - Windows 10/11 with [WebView2 Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) installed
 
 For the experimental Linux path, you also need GTK 3 and WebKitGTK runtime libraries installed on the machine.
@@ -33,7 +33,7 @@ For web application embedding patterns, inspect `samples/OmniHost.Sample.WebShow
 
 ## Your First App
 
-Create a console project targeting `net8.0-windows`:
+Create a console project targeting `net10.0-windows`:
 
 ```csharp
 using OmniHost;
@@ -134,3 +134,4 @@ can stay lean and AOT-friendly.
 - [Architecture](architecture.md) — understand how the pieces fit together
 - [JS Bridge](js-bridge.md) — full bridge API reference
 - [Adapters](adapters.md) — choose or implement a browser adapter
+

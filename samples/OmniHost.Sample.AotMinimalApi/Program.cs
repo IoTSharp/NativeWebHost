@@ -16,7 +16,7 @@ app.MapGet("/api/status", () =>
         new AotStatus(
             "AOT-friendly Minimal API",
             DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'"),
-            ".NET 8 NativeAOT-ready backend with static HTML front-end"),
+            ".NET 10 NativeAOT-ready backend with static HTML front-end"),
         SampleJsonSerializerContext.Default.AotStatus));
 
 app.MapGet("/api/todos", () =>
@@ -46,3 +46,4 @@ public sealed record TodoItem(
 internal sealed partial class SampleJsonSerializerContext : JsonSerializerContext
 {
 }
+
