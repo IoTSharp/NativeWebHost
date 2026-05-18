@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NativeWebHost Splash</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.28), transparent 28%),
+        radial-gradient(circle at 80% 15%, rgba(14, 165, 233, 0.24), transparent 24%),
+        linear-gradient(160deg, #020617 0%, #0f172a 100%);
+      color: #e2e8f0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .panel {
+      width: min(88vw, 540px);
+      padding: 2rem 2rem 1.6rem;
+      border-radius: 24px;
+      background: rgba(15, 23, 42, 0.82);
+      border: 1px solid rgba(125, 211, 252, 0.18);
+      box-shadow: 0 30px 90px rgba(2, 6, 23, 0.55);
+      backdrop-filter: blur(18px);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .55rem;
+      padding: .4rem .75rem;
+      border-radius: 999px;
+      background: rgba(14, 165, 233, 0.14);
+      color: #7dd3fc;
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .badge::before {
+      content: "";
+      width: .55rem;
+      height: .55rem;
+      border-radius: 999px;
+      background: #38bdf8;
+      box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.5);
+      animation: pulse 1.5s infinite;
+    }
+
+    h1 {
+      margin: 1rem 0 .45rem;
+      font-size: 2.15rem;
+      line-height: 1.08;
+    }
+
+    p {
+      margin: 0;
+      color: #94a3b8;
+      line-height: 1.6;
+    }
+
+    .status {
+      margin-top: 1.25rem;
+      padding: .9rem 1rem;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.74);
+      border: 1px solid rgba(51, 65, 85, 0.85);
+      color: #cbd5e1;
+      font-size: .92rem;
+    }
+
+    .bar {
+      margin-top: 1.1rem;
+      height: .45rem;
+      width: 100%;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(30, 41, 59, 0.92);
+    }
+
+    .bar-fill {
+      height: 100%;
+      width: 35%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0ea5e9 0%, #7dd3fc 100%);
+      animation: travel 1.2s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.5);
+      }
+
+      100% {
+        box-shadow: 0 0 0 14px rgba(56, 189, 248, 0);
+      }
+    }
+
+    @keyframes travel {
+      from {
+        transform: translateX(0);
+      }
+
+      to {
+        transform: translateX(185%);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <div class="badge">Loading Shell</div>
+    <h1>NativeWebHost is warming up</h1>
+    <p>
+      The splash helper keeps this lightweight window visible while the main host
+      window starts, initializes the adapter, and finishes its first page load.
+    </p>
+
+    <div class="status" id="status">
+      Waiting for the main window startup signal...
+    </div>
+
+    <div class="bar">
+      <div class="bar-fill"></div>
+    </div>
+  </main>
+
+  <script>
+    const status = document.getElementById('status');
+
+    nativeWeb.on('splash.mainWindowStarted', async (data) => {
+      status.textContent = 'Main window "' + data.title + '" is ready. Closing splash...';
+
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      await nativeWeb.invoke('splash.close');
+    });
+  </script>
+</body>
+</html>

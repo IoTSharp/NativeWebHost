@@ -112,7 +112,7 @@ else if (OperatingSystem.IsMacOS())
 }
 ```
 
-See `samples/NativeWebHost.Sample.CrossPlatform` for the current working Windows/Linux sample.
+See `samples/NativeWebHost.Sample.Windows`, `samples/NativeWebHost.Sample.Linux`, and `samples/NativeWebHost.Sample.Mac` for the per-OS adapter samples.
 
 ## Options
 

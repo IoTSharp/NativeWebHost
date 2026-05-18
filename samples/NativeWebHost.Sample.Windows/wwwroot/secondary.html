@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NativeWebHost Secondary Window</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(34, 197, 94, 0.2), transparent 32%),
+        linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+      color: #0f172a;
+      padding: 1.5rem;
+    }
+
+    .shell {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .hero {
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      border-radius: 18px;
+      padding: 1.4rem;
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      margin: 0 0 .4rem;
+      font-size: 1.7rem;
+    }
+
+    p {
+      margin: 0;
+      color: #334155;
+      line-height: 1.5;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      border-radius: 16px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      background: #0f172a;
+      color: #fff;
+      padding: .65rem 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #1e293b;
+    }
+
+    .output {
+      margin-top: .85rem;
+      padding: .8rem .95rem;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+      font-size: .82rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .event-list {
+      display: grid;
+      gap: .55rem;
+    }
+
+    .event {
+      padding: .65rem .75rem;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+      font-size: .8rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1 id="window-title">Secondary Startup Window</h1>
+      <p>
+        This page is used by both the startup secondary window and dynamically opened
+        inspector windows, while still sharing the same adapter factory and desktop app.
+      </p>
+    </section>
+
+    <section class="card">
+      <button id="btn-sysinfo">Load Shared System Info</button>
+      <button id="btn-close-self">Close This Window</button>
+      <div class="output" id="sysinfo-output">Waiting for shared .NET data...</div>
+    </section>
+
+    <section class="card">
+      <div class="output" id="tick-output">Waiting for tick events...</div>
+    </section>
+
+    <section class="card">
+      <div class="event-list" id="event-list">
+        <div class="event">Waiting for native window lifecycle events...</div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const windowKind = new URLSearchParams(window.location.search).get('window') || 'secondary';
+    document.getElementById('window-title').textContent =
+      windowKind === 'inspector' ? 'Inspector Tool Window' : 'Secondary Startup Window';
+
+    document.getElementById('btn-sysinfo').addEventListener('click', async () => {
+      const output = document.getElementById('sysinfo-output');
+      output.textContent = 'Calling shared .NET desktop app...';
+
+      try {
+        const info = await nativeWeb.invoke('sysinfo');
+        output.textContent = JSON.stringify(info, null, 2);
+      } catch (err) {
+        output.textContent = 'Error: ' + err.message;
+      }
+    });
+
+    document.getElementById('btn-close-self').addEventListener('click', () => {
+      nativeWeb.window.close();
+    });
+
+    nativeWeb.on('tick', (data) => {
+      document.getElementById('tick-output').textContent =
+        'Tick received for ' + data.windowId + ' at ' + data.time;
+    });
+
+    const eventList = document.getElementById('event-list');
+
+    function appendEvent(name, data) {
+      const line = document.createElement('div');
+      line.className = 'event';
+      line.textContent = '[' + new Date().toLocaleTimeString() + '] ' +
+        name + ' ' + JSON.stringify(data);
+
+      if (eventList.children.length === 1 &&
+          eventList.firstElementChild &&
+          eventList.firstElementChild.textContent.includes('Waiting for')) {
+        eventList.replaceChildren(line);
+      } else {
+        eventList.prepend(line);
+      }
+    }
+
+    nativeWeb.on('window.stateChanged', (data) => appendEvent('window.stateChanged', data));
+    nativeWeb.on('window.closing', (data) => appendEvent('window.closing', data));
+    nativeWeb.on('window.closed', (data) => appendEvent('window.closed', data));
+    nativeWeb.on('host.notice', (data) => appendEvent('host.notice', data));
+  </script>
+</body>
+</html>

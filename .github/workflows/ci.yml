@@ -48,29 +48,13 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Build Windows samples
+      - name: Build adapter samples
         shell: pwsh
         run: |
           $projects = @(
-            "samples\NativeWebHost.Sample.Basic\NativeWebHost.Sample.Basic.csproj",
-            "samples\NativeWebHost.Sample.WindowStyles\NativeWebHost.Sample.WindowStyles.csproj",
-            "samples\NativeWebHost.Sample.WebShowcase\NativeWebHost.Sample.WebShowcase.csproj",
-            "samples\NativeWebHost.Sample.CrossPlatform\NativeWebHost.Sample.CrossPlatform.csproj"
-          )
-
-          foreach ($project in $projects) {
-            dotnet build $project -c $env:CONFIGURATION -p:ContinuousIntegrationBuild=true
-            if ($LASTEXITCODE -ne 0) {
-              exit $LASTEXITCODE
-            }
-          }
-
-      - name: Build Linux-compatible samples
-        shell: pwsh
-        run: |
-          $projects = @(
-            "samples\NativeWebHost.Sample.Gtk\NativeWebHost.Sample.Gtk.csproj",
-            "samples\NativeWebHost.Sample.AotMinimalApi\NativeWebHost.Sample.AotMinimalApi.csproj"
+            "samples\NativeWebHost.Sample.Windows\NativeWebHost.Sample.Windows.csproj",
+            "samples\NativeWebHost.Sample.Linux\NativeWebHost.Sample.Linux.csproj",
+            "samples\NativeWebHost.Sample.Mac\NativeWebHost.Sample.Mac.csproj"
           )
 
           foreach ($project in $projects) {

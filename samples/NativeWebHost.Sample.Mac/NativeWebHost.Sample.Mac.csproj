@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>NativeWebHost.Sample.Mac</RootNamespace>
+    <AssemblyName>NativeWebHost.Sample.Mac</AssemblyName>
+    <Version>0.1.0-preview.3</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="wwwroot\**\*" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NativeWebHost\NativeWebHost.csproj" />
+    <ProjectReference Include="..\..\src\NativeWebHost.Mac\NativeWebHost.Mac.csproj" />
+  </ItemGroup>
+
+</Project>

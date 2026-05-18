@@ -142,10 +142,7 @@ jobs:
           PACKAGE_VERSION: ${{ needs.pack-nuget.outputs.version }}
         run: |
           $samples = @(
-            @{ Project = "samples\NativeWebHost.Sample.Basic\NativeWebHost.Sample.Basic.csproj"; Name = "NativeWebHost.Sample.Basic-windows" },
-            @{ Project = "samples\NativeWebHost.Sample.WindowStyles\NativeWebHost.Sample.WindowStyles.csproj"; Name = "NativeWebHost.Sample.WindowStyles-windows" },
-            @{ Project = "samples\NativeWebHost.Sample.WebShowcase\NativeWebHost.Sample.WebShowcase.csproj"; Name = "NativeWebHost.Sample.WebShowcase-windows" },
-            @{ Project = "samples\NativeWebHost.Sample.CrossPlatform\NativeWebHost.Sample.CrossPlatform.csproj"; Name = "NativeWebHost.Sample.CrossPlatform-windows"; Framework = "net10.0-windows" }
+            @{ Project = "samples\NativeWebHost.Sample.Windows\NativeWebHost.Sample.Windows.csproj"; Name = "NativeWebHost.Sample.Windows-windows" }
           )
 
           New-Item -ItemType Directory -Path artifacts\release -Force | Out-Null
@@ -246,14 +243,58 @@ jobs:
             )
           }
 
-          publish_sample "samples/NativeWebHost.Sample.Gtk/NativeWebHost.Sample.Gtk.csproj" "NativeWebHost.Sample.Gtk-linux"
-          publish_sample "samples/NativeWebHost.Sample.CrossPlatform/NativeWebHost.Sample.CrossPlatform.csproj" "NativeWebHost.Sample.CrossPlatform-linux" "net10.0"
-          publish_sample "samples/NativeWebHost.Sample.AotMinimalApi/NativeWebHost.Sample.AotMinimalApi.csproj" "NativeWebHost.Sample.AotMinimalApi-linux"
+          publish_sample "samples/NativeWebHost.Sample.Linux/NativeWebHost.Sample.Linux.csproj" "NativeWebHost.Sample.Linux-linux"
 
       - name: Upload Linux release assets
         uses: actions/upload-artifact@v4
         with:
           name: sample-assets-linux
+          path: artifacts/release/*.zip
+          if-no-files-found: error
+
+  publish-samples-macos:
+    name: Publish macOS Samples
+    runs-on: macos-latest
+    needs: pack-nuget
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Publish macOS sample artifacts
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ needs.pack-nuget.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p artifacts/release artifacts/publish
+
+          asset_name="NativeWebHost.Sample.Mac-macos"
+          publish_dir="artifacts/publish/${asset_name}"
+
+          dotnet publish "samples/NativeWebHost.Sample.Mac/NativeWebHost.Sample.Mac.csproj" \
+            -c "$CONFIGURATION" \
+            -o "$publish_dir" \
+            -p:ContinuousIntegrationBuild=true \
+            -p:Version="$PACKAGE_VERSION"
+
+          zip_path="artifacts/release/${asset_name}-v${PACKAGE_VERSION}.zip"
+          rm -f "$zip_path"
+          (
+            cd artifacts/publish
+            zip -qr "../release/$(basename "$zip_path")" "$(basename "$publish_dir")"
+          )
+
+      - name: Upload macOS release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: sample-assets-macos
           path: artifacts/release/*.zip
           if-no-files-found: error
 
@@ -264,6 +305,7 @@ jobs:
       - pack-nuget
       - publish-samples-windows
       - publish-samples-linux
+      - publish-samples-macos
 
     steps:
       - name: Download release assets

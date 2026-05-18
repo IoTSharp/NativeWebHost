@@ -48,8 +48,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `NativeWebHost.Linux`, an experimental first-pass Linux WebKitGTK adapter package.
 - The basic sample now shows a live window lifecycle event stream.
 - The basic sample now launches a secondary startup window and can open/close an inspector window at runtime, activate windows by id, inspect live window context, and broadcast host events.
-- Added `samples/NativeWebHost.Sample.Gtk`, a Linux-oriented sample that pairs `NativeWebHost.Linux` with `NativeWebHost.Linux` and reuses the shared demo web assets.
-- Added `samples/NativeWebHost.Sample.CrossPlatform`, a sample entry that auto-selects Windows/WebView2 or Linux/GTK+WebKitGTK at startup.
+- Added one adapter sample per operating system under `samples/NativeWebHost.Sample.Windows`, `samples/NativeWebHost.Sample.Linux`, and `samples/NativeWebHost.Sample.Mac`.
 - Linux GTK host windows now register richer `nativeWeb.window.*` bridge handlers, including drag start, better state synchronization, and best-effort system-menu support.
 - `NativeWebHost.Linux` now serves `app://` assets through a native WebKitGTK URI scheme handler instead of relying on `file://` URL translation.
 

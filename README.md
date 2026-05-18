@@ -45,7 +45,7 @@ await app.RunAsync();
 
 `NativeWebHost.Windows` supports `app://localhost/...` local assets, JavaScript bridge injection, custom window chrome helpers, and built-in title-bar presets.
 
-Linux uses the same app code shape with `GtkRuntime` and `WebKitGtkAdapterFactory` from `NativeWebHost.Linux`. See `samples/NativeWebHost.Sample.CrossPlatform` for the platform switch.
+The `samples` folder contains one adapter sample per operating system: `NativeWebHost.Sample.Windows`, `NativeWebHost.Sample.Linux`, and `NativeWebHost.Sample.Mac`.
 
 ## Features
 
@@ -55,7 +55,7 @@ Linux uses the same app code shape with `GtkRuntime` and `WebKitGtkAdapterFactor
 - Multi-window startup and dynamic window management
 - Splash windows
 - Window style presets such as normal, frameless, DWM blur glass, and VS Code-style chrome where the OS runtime supports them
-- ASP.NET Core, Blazor, Vue SPA, and static asset hosting examples
+- Per-OS adapter samples for Windows, Linux, and macOS
 
 ## Documentation
 

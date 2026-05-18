@@ -33,9 +33,6 @@ Removed paths: WinForms, the old managed `NativeWebHost.WebView2` adapter, and C
 
 ## Samples
 
-- `samples/NativeWebHost.Sample.Basic`
-- `samples/NativeWebHost.Sample.CrossPlatform`
-- `samples/NativeWebHost.Sample.Gtk`
-- `samples/NativeWebHost.Sample.WindowStyles`
-- `samples/NativeWebHost.Sample.WebShowcase`
-- `samples/NativeWebHost.Sample.AotMinimalApi`
+- `samples/NativeWebHost.Sample.Windows`
+- `samples/NativeWebHost.Sample.Linux`
+- `samples/NativeWebHost.Sample.Mac`
