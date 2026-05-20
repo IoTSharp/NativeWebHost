@@ -135,7 +135,8 @@ jobs:
 
   pack-nuget-macos:
     name: Pack And Publish macOS NuGet
-    runs-on: macos-latest
+    # macos-26 ships with Xcode 26.x as required by the .NET 10 macOS workload.
+    runs-on: macos-26
     needs: pack-nuget
 
     steps:
@@ -146,6 +147,19 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Select Xcode 26.0
+        # The .NET 10 macOS workload pins Xcode to 26.0 exactly; the macos-26
+        # image defaults to a newer Xcode that the Xamarin SDK rejects. Use the
+        # canonical Xcode_26.0.1.app path (not the /Applications/Xcode_26.0.app
+        # symlink), and run -runFirstLaunch so the MacOSX SDK / command-line
+        # components are properly registered for the new selection.
+        shell: bash
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          sudo xcodebuild -runFirstLaunch
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-path
 
       - name: Install macOS workload
         shell: bash
@@ -349,7 +363,8 @@ jobs:
 
   publish-samples-macos:
     name: Publish macOS Samples
-    runs-on: macos-latest
+    # macos-26 ships with Xcode 26.x as required by the .NET 10 macOS workload.
+    runs-on: macos-26
     needs: pack-nuget
 
     steps:
@@ -360,6 +375,19 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Select Xcode 26.0
+        # The .NET 10 macOS workload pins Xcode to 26.0 exactly; the macos-26
+        # image defaults to a newer Xcode that the Xamarin SDK rejects. Use the
+        # canonical Xcode_26.0.1.app path (not the /Applications/Xcode_26.0.app
+        # symlink), and run -runFirstLaunch so the MacOSX SDK / command-line
+        # components are properly registered for the new selection.
+        shell: bash
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          sudo xcodebuild -runFirstLaunch
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-path
 
       - name: Install macOS workload
         shell: bash
