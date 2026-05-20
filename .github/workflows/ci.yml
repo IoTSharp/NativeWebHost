@@ -84,7 +84,11 @@ jobs:
 
   build-macos:
     name: Build macOS Package And Sample
-    runs-on: macos-latest
+    # macos-26 image ships with Xcode 26.x, required by the .NET 10 macOS workload
+    # (Xamarin.Shared.Sdk targets refuse to build/link with older Xcode). The
+    # macos-latest label is still pinned to macOS 15 (Xcode 16.x), which causes
+    # "This version of .NET for macOS requires Xcode 26.0" build errors.
+    runs-on: macos-26
 
     steps:
       - name: Checkout

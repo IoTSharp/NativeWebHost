@@ -135,7 +135,8 @@ jobs:
 
   pack-nuget-macos:
     name: Pack And Publish macOS NuGet
-    runs-on: macos-latest
+    # macos-26 ships with Xcode 26.x as required by the .NET 10 macOS workload.
+    runs-on: macos-26
     needs: pack-nuget
 
     steps:
@@ -349,7 +350,8 @@ jobs:
 
   publish-samples-macos:
     name: Publish macOS Samples
-    runs-on: macos-latest
+    # macos-26 ships with Xcode 26.x as required by the .NET 10 macOS workload.
+    runs-on: macos-26
     needs: pack-nuget
 
     steps:
