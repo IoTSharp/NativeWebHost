@@ -8,6 +8,8 @@
     <RootNamespace>NativeWebHost.Sample.Mac</RootNamespace>
     <AssemblyName>NativeWebHost.Sample.Mac</AssemblyName>
     <Version>0.1.0-preview.3</Version>
+    <ApplicationId>com.iotsharp.nativewebhost.sample.mac</ApplicationId>
+    <ApplicationTitle>NativeWebHost.Sample.Mac</ApplicationTitle>
     <SupportedOSPlatformVersion>$(NativeWebHostMacOSMinimumVersion)</SupportedOSPlatformVersion>
   </PropertyGroup>
 
