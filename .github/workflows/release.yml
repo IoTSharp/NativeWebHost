@@ -43,9 +43,21 @@ jobs:
 
       - name: Restore
         shell: pwsh
-        run: dotnet restore NativeWebHost.sln
+        run: |
+          $projects = @(
+            "src\NativeWebHost\NativeWebHost.csproj",
+            "src\NativeWebHost.Windows\NativeWebHost.Windows.csproj",
+            "src\NativeWebHost.Linux\NativeWebHost.Linux.csproj"
+          )
 
-      - name: Pack four public packages
+          foreach ($project in $projects) {
+            dotnet restore $project
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+
+      - name: Pack desktop packages
         shell: pwsh
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.value }}
@@ -54,8 +66,7 @@ jobs:
           $projects = @(
             "src\NativeWebHost\NativeWebHost.csproj",
             "src\NativeWebHost.Windows\NativeWebHost.Windows.csproj",
-            "src\NativeWebHost.Linux\NativeWebHost.Linux.csproj",
-            "src\NativeWebHost.Mac\NativeWebHost.Mac.csproj"
+            "src\NativeWebHost.Linux\NativeWebHost.Linux.csproj"
           )
 
           foreach ($project in $projects) {
@@ -119,6 +130,90 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nuget-packages
+          path: artifacts/nuget/*.nupkg
+          if-no-files-found: error
+
+  pack-nuget-macos:
+    name: Pack And Publish macOS NuGet
+    runs-on: macos-latest
+    needs: pack-nuget
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install macOS workload
+        shell: bash
+        run: dotnet workload install macos --skip-manifest-update
+
+      - name: Pack macOS package
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ needs.pack-nuget.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p artifacts/nuget
+
+          dotnet restore src/NativeWebHost.Mac/NativeWebHost.Mac.csproj
+          dotnet pack src/NativeWebHost.Mac/NativeWebHost.Mac.csproj \
+            -c "$CONFIGURATION" \
+            --no-restore \
+            -o artifacts/nuget \
+            -p:ContinuousIntegrationBuild=true \
+            -p:Version="$PACKAGE_VERSION" \
+            -p:PackageVersion="$PACKAGE_VERSION"
+
+      - name: Publish macOS package to GitHub Packages
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          packages=(artifacts/nuget/*.nupkg)
+          if [[ "${#packages[@]}" -eq 0 ]]; then
+            echo "No NuGet packages were produced." >&2
+            exit 1
+          fi
+
+          for package in "${packages[@]}"; do
+            dotnet nuget push "$package" \
+              --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+              --api-key "$GITHUB_TOKEN" \
+              --skip-duplicate
+          done
+
+      - name: Publish macOS package to NuGet.org
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${NUGET_API_KEY:-}" ]]; then
+            echo "NUGET_API_KEY is not configured; skipping NuGet.org publish."
+            exit 0
+          fi
+
+          shopt -s nullglob
+          for package in artifacts/nuget/*.nupkg; do
+            dotnet nuget push "$package" \
+              --source "https://api.nuget.org/v3/index.json" \
+              --api-key "$NUGET_API_KEY" \
+              --skip-duplicate
+          done
+
+      - name: Upload macOS package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-macos
           path: artifacts/nuget/*.nupkg
           if-no-files-found: error
 
@@ -266,6 +361,10 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Install macOS workload
+        shell: bash
+        run: dotnet workload install macos --skip-manifest-update
+
       - name: Publish macOS sample artifacts
         shell: bash
         env:
@@ -303,6 +402,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - pack-nuget
+      - pack-nuget-macos
       - publish-samples-windows
       - publish-samples-linux
       - publish-samples-macos

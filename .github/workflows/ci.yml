@@ -29,14 +29,86 @@ jobs:
 
       - name: Restore
         shell: pwsh
-        run: dotnet restore NativeWebHost.sln
+        run: |
+          $projects = @(
+            "src\NativeWebHost\NativeWebHost.csproj",
+            "src\NativeWebHost.Windows\NativeWebHost.Windows.csproj",
+            "src\NativeWebHost.Linux\NativeWebHost.Linux.csproj"
+          )
+
+          foreach ($project in $projects) {
+            dotnet restore $project
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
 
       - name: Build
         shell: pwsh
-        run: dotnet build NativeWebHost.sln -c $env:CONFIGURATION --no-restore -p:ContinuousIntegrationBuild=true
+        run: |
+          $projects = @(
+            "src\NativeWebHost\NativeWebHost.csproj",
+            "src\NativeWebHost.Windows\NativeWebHost.Windows.csproj",
+            "src\NativeWebHost.Linux\NativeWebHost.Linux.csproj"
+          )
+
+          foreach ($project in $projects) {
+            dotnet build $project -c $env:CONFIGURATION --no-restore -p:ContinuousIntegrationBuild=true
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+
+  build-android:
+    name: Build Android Package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install Android workload
+        shell: pwsh
+        run: dotnet workload install android --skip-manifest-update
+
+      - name: Build Android package
+        shell: pwsh
+        run: |
+          dotnet restore src\NativeWebHost.Android\NativeWebHost.Android.csproj -p:EnableNativeWebHostAndroid=true
+          dotnet build src\NativeWebHost.Android\NativeWebHost.Android.csproj -c $env:CONFIGURATION --no-restore -p:ContinuousIntegrationBuild=true -p:EnableNativeWebHostAndroid=true
+
+  build-macos:
+    name: Build macOS Package And Sample
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install macOS workload
+        shell: bash
+        run: dotnet workload install macos --skip-manifest-update
+
+      - name: Build macOS package
+        shell: bash
+        run: dotnet build src/NativeWebHost.Mac/NativeWebHost.Mac.csproj -c "$CONFIGURATION" -p:ContinuousIntegrationBuild=true
+
+      - name: Build macOS sample
+        shell: bash
+        run: dotnet build samples/NativeWebHost.Sample.Mac/NativeWebHost.Sample.Mac.csproj -c "$CONFIGURATION" -p:ContinuousIntegrationBuild=true
 
   build-samples:
-    name: Build Samples
+    name: Build Desktop Samples
     runs-on: windows-latest
 
     steps:
@@ -53,8 +125,7 @@ jobs:
         run: |
           $projects = @(
             "samples\NativeWebHost.Sample.Windows\NativeWebHost.Sample.Windows.csproj",
-            "samples\NativeWebHost.Sample.Linux\NativeWebHost.Sample.Linux.csproj",
-            "samples\NativeWebHost.Sample.Mac\NativeWebHost.Sample.Mac.csproj"
+            "samples\NativeWebHost.Sample.Linux\NativeWebHost.Sample.Linux.csproj"
           )
 
           foreach ($project in $projects) {
