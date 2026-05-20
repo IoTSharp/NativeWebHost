@@ -148,6 +148,12 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Select Xcode 26.0
+        # The .NET 10 macOS workload pins Xcode to 26.0 exactly; the macos-26
+        # image defaults to a newer Xcode that the Xamarin SDK rejects.
+        shell: bash
+        run: sudo xcode-select -s /Applications/Xcode_26.0.app
+
       - name: Install macOS workload
         shell: bash
         run: dotnet workload install macos --skip-manifest-update
@@ -362,6 +368,12 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Select Xcode 26.0
+        # The .NET 10 macOS workload pins Xcode to 26.0 exactly; the macos-26
+        # image defaults to a newer Xcode that the Xamarin SDK rejects.
+        shell: bash
+        run: sudo xcode-select -s /Applications/Xcode_26.0.app
 
       - name: Install macOS workload
         shell: bash

@@ -99,6 +99,14 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Select Xcode 26.0
+        # The .NET 10 macOS workload (Microsoft.macOS.Sdk.net10.0_26.0 26.0.11017)
+        # pins Xcode to 26.0 exactly. The macos-26 image defaults to a newer Xcode
+        # (e.g. 26.2), which causes "requires Xcode 26.0" build errors. Switch to
+        # the Xcode_26.0.app provided by the image.
+        shell: bash
+        run: sudo xcode-select -s /Applications/Xcode_26.0.app
+
       - name: Install macOS workload
         shell: bash
         run: dotnet workload install macos --skip-manifest-update
