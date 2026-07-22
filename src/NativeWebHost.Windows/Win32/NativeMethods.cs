@@ -16,6 +16,7 @@ internal static class NativeMethods
     internal const uint WS_THICKFRAME   = 0x00040000u;
     internal const uint WS_MINIMIZEBOX  = 0x00020000u;
     internal const uint WS_MAXIMIZEBOX  = 0x00010000u;
+    internal const uint WS_MAXIMIZE     = 0x01000000u;
     internal const uint WS_VISIBLE      = 0x10000000u;
     internal const uint WS_CLIPCHILDREN = 0x02000000u;
     internal const uint WS_CLIPSIBLINGS = 0x04000000u;
@@ -24,6 +25,9 @@ internal static class NativeMethods
 
     // ── Extended window styles ────────────────────────────────────────────────
     internal const uint WS_EX_APPWINDOW = 0x00040000u;
+    internal const uint WS_EX_TOPMOST   = 0x00000008u;
+    internal const uint WS_EX_TOOLWINDOW = 0x00000080u;
+    internal const uint WS_EX_NOACTIVATE = 0x08000000u;
 
     // ── Class styles ──────────────────────────────────────────────────────────
     internal const uint CS_HREDRAW = 0x0002u;
@@ -34,6 +38,7 @@ internal static class NativeMethods
     internal const int SW_SHOWNORMAL   = 1;
     internal const int SW_SHOWMINIMIZED = 2;
     internal const int SW_SHOWMAXIMIZED = 3;
+    internal const int SW_SHOWNOACTIVATE = 4;
     internal const int SW_SHOW         = 5;
     internal const int SW_RESTORE      = 9;
 
@@ -122,6 +127,7 @@ internal static class NativeMethods
     internal const uint NIF_MESSAGE       = 0x00000001u;
     internal const uint NIF_ICON          = 0x00000002u;
     internal const uint NIF_TIP           = 0x00000004u;
+    internal const uint SPI_GETWORKAREA   = 0x0030u;
 
     // DWM window attributes
     internal const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20u;
@@ -349,6 +355,14 @@ internal static class NativeMethods
         int cx,
         int cy,
         uint uFlags);
+
+    [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SystemParametersInfoW(
+        uint uiAction,
+        uint uiParam,
+        out RECT pvParam,
+        uint fWinIni);
 
     // ── kernel32.dll ──────────────────────────────────────────────────────────
 

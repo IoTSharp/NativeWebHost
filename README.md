@@ -44,6 +44,39 @@ var app = NativeWebApp.CreateBuilder(args)
 await app.RunAsync();
 ```
 
+## Windows Application Integration
+
+`NativeWebHost.Windows` can opt into elevation, an elevated interactive logon task, and a desktop shortcut before the main window opens:
+
+```csharp
+var runtime = new Win32Runtime(new Win32RuntimeOptions
+{
+    RequireAdministrator = true,
+    EnsureElevatedAutoStart = true,
+    AutoStartTaskName = "My App",
+    AutoStartArguments = ["--autostart"],
+    EnsureDesktopShortcut = true,
+    DesktopShortcutName = "My App"
+});
+```
+
+NuGet consumers can embed the supplied administrator manifest before process startup by adding this opt-in build property to the executable project:
+
+```xml
+<NativeWebHostRequireAdministrator>true</NativeWebHostRequireAdministrator>
+```
+
+The runtime check remains in place as a fallback if a consuming executable omits the manifest. `WindowsApplicationRegistration` also exposes the individual shortcut and elevated-logon-task operations for installers and other hosts.
+
+Native AOT-compatible Windows SAPI playback is available independently of the window runtime:
+
+```csharp
+using var speech = new WindowsTextToSpeech();
+speech.TrySpeak("Vehicle notification");
+```
+
+The Windows WebView2 JavaScript bridge accepts messages only from the `StartUrl` origin by default. Set `WebView2JsBridgeAllowedOrigins` to an explicit origin list for trusted redirects, to an empty list to disable inbound bridge calls, or to `["*"]` only when every navigated document is fully trusted.
+
 `NativeWebHost.Windows`, `NativeWebHost.Linux`, and `NativeWebHost.Mac` support `app://localhost/...` local assets, JavaScript bridge injection, and native window hosting for their platform WebView engines. `NativeWebHost.Android` provides an Activity base, APK asset loading through `https://appassets.androidplatform.net/`, JavaScript bridge injection, and same-origin `/api/...` fetch interception for app-provided handlers.
 
 The `samples` folder contains adapter samples for Windows, Linux, and macOS. Android is currently consumed through `NativeWebHostAndroidActivity`.
@@ -56,6 +89,7 @@ The `samples` folder contains adapter samples for Windows, Linux, and macOS. And
 - Android APK/AAB asset loading through the platform WebView
 - Multi-window startup and dynamic window management
 - Splash windows
+- Windows tray menus, elevated auto-start, desktop shortcuts, and SAPI text-to-speech
 - Window style presets such as normal, frameless, DWM blur glass, and VS Code-style chrome where the OS runtime supports them
 - Per-OS adapter samples for Windows, Linux, and macOS
 

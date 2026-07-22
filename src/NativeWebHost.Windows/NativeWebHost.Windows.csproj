@@ -15,6 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="DirectNAot.Extensions" Version="1.6.1" />
     <PackageReference Include="WebView2Aot" Version="1.4.1" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3856.49" GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" />
   </ItemGroup>
@@ -28,6 +29,15 @@
     <EmbeddedResource Include="$(PkgMicrosoft_Web_WebView2)\runtimes\win-x64\native\WebView2Loader.dll" LogicalName="runtimes.win-x64.native.WebView2Loader.dll" />
     <EmbeddedResource Include="$(PkgMicrosoft_Web_WebView2)\runtimes\win-x86\native\WebView2Loader.dll" LogicalName="runtimes.win-x86.native.WebView2Loader.dll" />
     <EmbeddedResource Include="$(PkgMicrosoft_Web_WebView2)\runtimes\win-arm64\native\WebView2Loader.dll" LogicalName="runtimes.win-arm64.native.WebView2Loader.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Manifests\NativeWebHost.Windows.RequireAdministrator.manifest"
+          Pack="true"
+          PackagePath="buildTransitive\NativeWebHost.Windows.RequireAdministrator.manifest" />
+    <None Update="buildTransitive\NativeWebHost.Windows.targets"
+          Pack="true"
+          PackagePath="buildTransitive\NativeWebHost.Windows.targets" />
   </ItemGroup>
 
 </Project>

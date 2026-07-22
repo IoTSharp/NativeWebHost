@@ -171,7 +171,8 @@ internal sealed partial class Win32HostWindow : IHostWindow
     {
         var hInstance = NativeMethods.GetModuleHandleW(IntPtr.Zero);
 
-        var (style, exStyle) = _frameStrategy.GetWindowStyles();
+        var (style, exStyle) = GetConfiguredWindowStyles();
+        var (x, y) = GetInitialWindowPosition();
 
         // We pass a GCHandle to 'this' as lpParam so the static WndProc can
         // retrieve the instance during WM_NCCREATE (before CreateWindowExW returns).
@@ -181,7 +182,7 @@ internal sealed partial class Win32HostWindow : IHostWindow
             exStyle,
             WindowClassName, _options.Title,
             style,
-            NativeMethods.CW_USEDEFAULT, NativeMethods.CW_USEDEFAULT,
+            x, y,
             _options.Width, _options.Height,
             IntPtr.Zero, IntPtr.Zero, hInstance,
             GCHandle.ToIntPtr(gcHandle));     // ← stored in GWLP_USERDATA via WM_NCCREATE
@@ -195,6 +196,73 @@ internal sealed partial class Win32HostWindow : IHostWindow
 
         // GCHandle is now owned by GWLP_USERDATA; freed in OnDestroy.
         return hwnd;
+    }
+
+    /// <summary>把通用窗口行为选项转换为 Win32 普通样式和扩展样式。</summary>
+    private (uint Style, uint ExStyle) GetConfiguredWindowStyles()
+    {
+        var (style, exStyle) = _frameStrategy.GetWindowStyles();
+        if (!_options.Resizable)
+        {
+            style &= ~(NativeMethods.WS_THICKFRAME | NativeMethods.WS_MAXIMIZEBOX);
+        }
+
+        if (!_options.ShowInTaskbar)
+        {
+            exStyle &= ~NativeMethods.WS_EX_APPWINDOW;
+            exStyle |= NativeMethods.WS_EX_TOOLWINDOW;
+        }
+
+        if (_options.AlwaysOnTop)
+        {
+            exStyle |= NativeMethods.WS_EX_TOPMOST;
+        }
+
+        if (!_options.ActivateOnShow)
+        {
+            exStyle |= NativeMethods.WS_EX_NOACTIVATE | NativeMethods.WS_EX_TOOLWINDOW;
+            if (_options.StartMaximized)
+            {
+                // SW_SHOWNOACTIVATE 没有最大化变体，需在创建时写入初始最大化状态。
+                style |= NativeMethods.WS_MAXIMIZE;
+            }
+        }
+
+        return (style, exStyle);
+    }
+
+    /// <summary>根据主屏幕工作区和配置边距计算首次显示坐标。</summary>
+    private (int X, int Y) GetInitialWindowPosition()
+    {
+        if (_options.WindowPlacement == NativeWebWindowPlacement.Default
+            || !NativeMethods.SystemParametersInfoW(
+                NativeMethods.SPI_GETWORKAREA,
+                0,
+                out var workArea,
+                0))
+        {
+            return (NativeMethods.CW_USEDEFAULT, NativeMethods.CW_USEDEFAULT);
+        }
+
+        var availableWidth = Math.Max(0, workArea.right - workArea.left);
+        var availableHeight = Math.Max(0, workArea.bottom - workArea.top);
+        if (_options.WindowPlacement == NativeWebWindowPlacement.CenterScreen)
+        {
+            return (
+                workArea.left + Math.Max(0, (availableWidth - _options.Width) / 2),
+                workArea.top + Math.Max(0, (availableHeight - _options.Height) / 2));
+        }
+
+        // 偏移来自外部配置，过大时仍需至少保留窗口左上角在可用工作区内。
+        var rightAlignedX = (long)workArea.right
+            - Math.Max(0, _options.Width)
+            - Math.Max(0, _options.WindowOffsetX);
+        var bottomAlignedY = (long)workArea.bottom
+            - Math.Max(0, _options.Height)
+            - Math.Max(0, _options.WindowOffsetY);
+        return (
+            (int)Math.Max(workArea.left, rightAlignedX),
+            (int)Math.Max(workArea.top, bottomAlignedY));
     }
 
     // ── Static WndProc ────────────────────────────────────────────────────────
@@ -534,7 +602,9 @@ internal sealed partial class Win32HostWindow : IHostWindow
         {
             NativeMethods.ShowWindow(
                 _hwnd,
-                _options.StartMaximized ? NativeMethods.SW_SHOWMAXIMIZED : NativeMethods.SW_SHOW);
+                !_options.ActivateOnShow
+                    ? NativeMethods.SW_SHOWNOACTIVATE
+                    : (_options.StartMaximized ? NativeMethods.SW_SHOWMAXIMIZED : NativeMethods.SW_SHOW));
         }
         else
         {

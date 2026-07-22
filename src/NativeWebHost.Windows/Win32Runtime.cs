@@ -15,6 +15,7 @@ public sealed class Win32Runtime : IMultiWindowDesktopRuntime
 {
     private readonly IHostWindowFactory _windowFactory;
     private readonly HostWindowCoordinator _coordinator;
+    private readonly Win32RuntimeOptions _runtimeOptions;
     private readonly object _executionGate = new();
     private RuntimeExecution? _currentExecution;
 
@@ -22,7 +23,13 @@ public sealed class Win32Runtime : IMultiWindowDesktopRuntime
     /// Creates a Win32 runtime using the default raw Win32 host window implementation.
     /// </summary>
     public Win32Runtime()
-        : this(new Win32HostWindowFactory())
+        : this(new Win32RuntimeOptions())
+    {
+    }
+
+    /// <summary>使用默认原生 Win32 窗口和指定 Windows 应用集成配置创建运行时。</summary>
+    public Win32Runtime(Win32RuntimeOptions runtimeOptions)
+        : this(new Win32HostWindowFactory(), runtimeOptions)
     {
     }
 
@@ -30,14 +37,31 @@ public sealed class Win32Runtime : IMultiWindowDesktopRuntime
     /// Creates a Win32 runtime with a custom host-window factory.
     /// </summary>
     public Win32Runtime(IHostWindowFactory windowFactory)
-        : this(windowFactory, new HostWindowCoordinator())
+        : this(windowFactory, new Win32RuntimeOptions())
     {
     }
 
+    /// <summary>使用自定义窗口工厂和 Windows 应用集成配置创建运行时。</summary>
+    public Win32Runtime(IHostWindowFactory windowFactory, Win32RuntimeOptions runtimeOptions)
+        : this(windowFactory, new HostWindowCoordinator(), runtimeOptions)
+    {
+    }
+
+    /// <summary>使用默认 Windows 应用集成配置创建可注入协调器的内部运行时。</summary>
     internal Win32Runtime(IHostWindowFactory windowFactory, HostWindowCoordinator coordinator)
+        : this(windowFactory, coordinator, new Win32RuntimeOptions())
+    {
+    }
+
+    /// <summary>集中初始化运行时依赖，供公开构造函数和内部测试入口复用。</summary>
+    internal Win32Runtime(
+        IHostWindowFactory windowFactory,
+        HostWindowCoordinator coordinator,
+        Win32RuntimeOptions runtimeOptions)
     {
         _windowFactory = windowFactory ?? throw new ArgumentNullException(nameof(windowFactory));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _runtimeOptions = runtimeOptions ?? throw new ArgumentNullException(nameof(runtimeOptions));
     }
 
     /// <inheritdoc/>
@@ -57,6 +81,12 @@ public sealed class Win32Runtime : IMultiWindowDesktopRuntime
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(additionalWindows);
         ArgumentNullException.ThrowIfNull(adapterFactory);
+
+        // 提权会启动替代进程；当前进程必须在创建任何窗口前直接结束本次运行。
+        if (!PrepareWindowsApplication(options))
+        {
+            return;
+        }
 
         RuntimeExecution execution;
         lock (_executionGate)
@@ -91,6 +121,115 @@ public sealed class Win32Runtime : IMultiWindowDesktopRuntime
                     _currentExecution = null;
             }
         }
+    }
+
+    /// <summary>在主窗口启动前完成提权、最高权限自启动和桌面快捷方式注册。</summary>
+    private bool PrepareWindowsApplication(NativeWebHostOptions hostOptions)
+    {
+        if (!_runtimeOptions.RequireAdministrator
+            && !_runtimeOptions.EnsureElevatedAutoStart
+            && !_runtimeOptions.EnsureDesktopShortcut)
+        {
+            return true;
+        }
+
+        var applicationPath = ResolveApplicationPath();
+        if (_runtimeOptions.RequireAdministrator
+            && !WindowsApplicationRegistration.IsCurrentProcessAdministrator())
+        {
+            WindowsApplicationRegistration.RestartAsAdministrator(
+                applicationPath,
+                ResolveAdministratorRestartArguments(applicationPath));
+            return false;
+        }
+
+        if (_runtimeOptions.EnsureElevatedAutoStart)
+        {
+            WindowsApplicationRegistration.EnsureElevatedLogonTask(
+                new WindowsElevatedLogonTaskOptions
+                {
+                    TaskName = ResolveConfiguredName(_runtimeOptions.AutoStartTaskName, hostOptions.Title),
+                    ExecutablePath = applicationPath,
+                    Arguments = _runtimeOptions.AutoStartArguments,
+                    ObsoleteRunKeyValueName = _runtimeOptions.ObsoleteRunKeyValueName
+                });
+        }
+
+        if (_runtimeOptions.EnsureDesktopShortcut)
+        {
+            WindowsApplicationRegistration.EnsureDesktopShortcut(
+                new WindowsDesktopShortcutOptions
+                {
+                    ShortcutName = ResolveConfiguredName(_runtimeOptions.DesktopShortcutName, hostOptions.Title),
+                    TargetPath = applicationPath,
+                    Arguments = _runtimeOptions.DesktopShortcutArguments,
+                    WorkingDirectory = _runtimeOptions.DesktopShortcutWorkingDirectory,
+                    IconPath = _runtimeOptions.DesktopShortcutIconPath ?? hostOptions.IconPath ?? applicationPath,
+                    IconIndex = _runtimeOptions.DesktopShortcutIconIndex,
+                    Description = _runtimeOptions.DesktopShortcutDescription ?? hostOptions.Title
+                });
+        }
+
+        return true;
+    }
+
+    /// <summary>取得调用方指定或当前进程使用的应用程序绝对路径。</summary>
+    private string ResolveApplicationPath()
+    {
+        var path = _runtimeOptions.ApplicationPath ?? Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new InvalidOperationException("无法取得 Windows 应用程序路径。");
+        }
+
+        return Path.GetFullPath(path);
+    }
+
+    /// <summary>取得提权重启参数；普通 apphost 跳过 argv[0]，dotnet 托管模式保留程序集参数。</summary>
+    private IReadOnlyList<string> ResolveAdministratorRestartArguments(string applicationPath)
+    {
+        if (_runtimeOptions.AdministratorRestartArguments is not null)
+        {
+            return _runtimeOptions.AdministratorRestartArguments;
+        }
+
+        var commandLineArguments = Environment.GetCommandLineArgs();
+        if (commandLineArguments.Length == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        return PathsEqual(commandLineArguments[0], applicationPath)
+            ? commandLineArguments.Skip(1).ToArray()
+            : commandLineArguments;
+    }
+
+    /// <summary>比较可能带相对路径的 Windows 应用程序路径。</summary>
+    private static bool PathsEqual(string firstPath, string secondPath)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(firstPath),
+                Path.GetFullPath(secondPath),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>优先使用显式名称，并在缺失时使用主窗口标题。</summary>
+    private static string ResolveConfiguredName(string? configuredName, string hostTitle)
+    {
+        var value = string.IsNullOrWhiteSpace(configuredName) ? hostTitle : configuredName;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException("Windows 应用注册名称不能为空。");
+        }
+
+        return value.Trim();
     }
 
     private void RunWindow(

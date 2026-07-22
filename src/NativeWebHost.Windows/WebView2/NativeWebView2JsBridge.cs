@@ -20,16 +20,22 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
     private SynchronizationContext? _dispatchContext;
     private CoreWebView2WebMessageReceivedEventHandler? _messageHandler;
     private EventRegistrationToken _messageToken;
+    private WebMessageOriginPolicy? _originPolicy;
+    private string? _currentDocumentOrigin;
     private bool _documentReady;
 
-    internal async Task InitializeAsync(ICoreWebView2 core, CancellationToken cancellationToken)
+    /// <summary>注册 WebMessage 处理器和桥接脚本，并固定本窗口的可信来源策略。</summary>
+    internal async Task InitializeAsync(
+        ICoreWebView2 core,
+        NativeWebHostOptions options,
+        CancellationToken cancellationToken)
     {
         _core = core ?? throw new ArgumentNullException(nameof(core));
+        _originPolicy = WebMessageOriginPolicy.Create(options);
         _dispatchContext = SynchronizationContext.Current;
         _messageHandler = new CoreWebView2WebMessageReceivedEventHandler(OnWebMessageReceived);
         _core.add_WebMessageReceived(_messageHandler, ref _messageToken).ThrowOnError();
         await AddScriptToExecuteOnDocumentCreatedAsync(LoadBridgeScript(), cancellationToken);
-        SetDocumentReady(true);
     }
 
     private static string LoadBridgeScript()
@@ -61,6 +67,11 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
 
         await RunOnBridgeThreadAsync(() =>
         {
+            if (_currentDocumentOrigin is null)
+            {
+                return;
+            }
+
             if (!_documentReady)
             {
                 _pendingEventMessages.Enqueue(envelope);
@@ -80,13 +91,26 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
 
         _messageHandler = null;
         _core = null;
+        _originPolicy = null;
+        _currentDocumentOrigin = null;
+        _documentReady = false;
+        _pendingEventMessages.Clear();
     }
 
-    internal void SetDocumentReady(bool isReady)
+    /// <summary>更新当前顶层文档来源，只向可信且完成导航的文档发送宿主消息。</summary>
+    internal void SetDocumentReady(bool isReady, string? source)
     {
-        _documentReady = isReady;
+        var normalizedOrigin = string.Empty;
+        var isAllowed = _originPolicy?.TryGetAllowedOrigin(source, out normalizedOrigin) == true;
+        _currentDocumentOrigin = isAllowed ? normalizedOrigin : null;
+        _documentReady = isReady && isAllowed;
+        if (!isAllowed)
+        {
+            _pendingEventMessages.Clear();
+            return;
+        }
 
-        if (!isReady)
+        if (!_documentReady)
             return;
 
         while (_pendingEventMessages.Count > 0)
@@ -97,6 +121,9 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
         ICoreWebView2 sender,
         ICoreWebView2WebMessageReceivedEventArgs args)
     {
+        if (!TryGetCurrentMessageOrigin(args, out var messageOrigin))
+            return;
+
         string? raw = null;
         try
         {
@@ -129,30 +156,76 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
                 "response",
                 msg.Id,
                 false,
-                Error: $"No JS bridge handler named '{msg.Handler}' is registered."));
+                Error: $"No JS bridge handler named '{msg.Handler}' is registered."),
+                messageOrigin);
             return;
         }
 
         try
         {
             var result = await handler(msg.Data ?? "null");
-            PostResponse(new BridgeResponseMessage("response", msg.Id, true, result));
+            PostResponse(
+                new BridgeResponseMessage("response", msg.Id, true, result),
+                messageOrigin);
         }
         catch (Exception ex)
         {
-            PostResponse(new BridgeResponseMessage("response", msg.Id, false, Error: ex.Message));
+            PostResponse(
+                new BridgeResponseMessage("response", msg.Id, false, Error: ex.Message),
+                messageOrigin);
         }
     }
 
-    private void PostResponse(BridgeResponseMessage payload)
+    /// <summary>仅当请求来源仍是当前可信文档时发送异步调用结果。</summary>
+    private void PostResponse(BridgeResponseMessage payload, string requestOrigin)
     {
-        if (_core is null)
+        if (_core is null
+            || !_documentReady
+            || !string.Equals(
+                requestOrigin,
+                _currentDocumentOrigin,
+                StringComparison.OrdinalIgnoreCase))
             return;
 
         var response = JsonSerializer.Serialize(
             payload,
             NativeWebView2JsonContext.Default.BridgeResponseMessage);
         _core.PostWebMessageAsString(PWSTR.From(response)).ThrowOnError();
+    }
+
+    /// <summary>读取 WebView2 报告的消息来源，并拒绝跨源或导航切换期间的调用。</summary>
+    private bool TryGetCurrentMessageOrigin(
+        ICoreWebView2WebMessageReceivedEventArgs args,
+        out string messageOrigin)
+    {
+        messageOrigin = string.Empty;
+        if (!_documentReady || _originPolicy is null || _currentDocumentOrigin is null)
+        {
+            return false;
+        }
+
+        PWSTR source = default;
+        try
+        {
+            args.get_Source(out source).ThrowOnError();
+            var sourceText = source.Value == 0 ? null : source.ToString();
+            return _originPolicy.TryGetAllowedOrigin(sourceText, out messageOrigin)
+                && string.Equals(
+                    messageOrigin,
+                    _currentDocumentOrigin,
+                    StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (source.Value != 0)
+            {
+                Marshal.FreeCoTaskMem(source.Value);
+            }
+        }
     }
 
     private Task AddScriptToExecuteOnDocumentCreatedAsync(

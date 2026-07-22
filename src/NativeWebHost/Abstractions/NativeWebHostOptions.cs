@@ -20,8 +20,34 @@ public class NativeWebHostOptions
     /// <summary>Whether the host window should start maximized.</summary>
     public bool StartMaximized { get; set; }
 
+    /// <summary>窗口首次显示时相对于工作区的定位方式。</summary>
+    public NativeWebWindowPlacement WindowPlacement { get; set; } = NativeWebWindowPlacement.Default;
+
+    /// <summary>应用定位策略后沿水平方向向工作区内侧缩进的像素数。</summary>
+    public int WindowOffsetX { get; set; }
+
+    /// <summary>应用定位策略后沿垂直方向向工作区内侧缩进的像素数。</summary>
+    public int WindowOffsetY { get; set; }
+
+    /// <summary>窗口是否始终置于普通窗口之上。</summary>
+    public bool AlwaysOnTop { get; set; }
+
+    /// <summary>窗口是否在任务栏中显示按钮。</summary>
+    public bool ShowInTaskbar { get; set; } = true;
+
+    /// <summary>窗口首次显示时是否取得输入焦点。</summary>
+    public bool ActivateOnShow { get; set; } = true;
+
+    /// <summary>用户是否可以调整窗口尺寸。</summary>
+    public bool Resizable { get; set; } = true;
     /// <summary>Whether browser DevTools are enabled.</summary>
     public bool EnableDevTools { get; set; }
+
+    /// <summary>
+    /// 允许调用 WebView2 宿主 JavaScript 桥接的文档来源。null 表示仅允许 StartUrl 的来源，
+    /// 空列表表示禁用入站调用；"*" 会恢复任意来源访问，仅应用于完全可信内容。
+    /// </summary>
+    public IReadOnlyList<string>? WebView2JsBridgeAllowedOrigins { get; set; }
 
     /// <summary>
     /// Custom URI scheme name used to serve local assets (e.g. <c>"app"</c> → <c>app://localhost/</c>).
@@ -117,7 +143,15 @@ public class NativeWebHostOptions
             Width = Width,
             Height = Height,
             StartMaximized = StartMaximized,
+            WindowPlacement = WindowPlacement,
+            WindowOffsetX = WindowOffsetX,
+            WindowOffsetY = WindowOffsetY,
+            AlwaysOnTop = AlwaysOnTop,
+            ShowInTaskbar = ShowInTaskbar,
+            ActivateOnShow = ActivateOnShow,
+            Resizable = Resizable,
             EnableDevTools = EnableDevTools,
+            WebView2JsBridgeAllowedOrigins = WebView2JsBridgeAllowedOrigins?.ToArray(),
             CustomScheme = CustomScheme,
             ContentRootPath = ContentRootPath,
             UserDataFolder = UserDataFolder,

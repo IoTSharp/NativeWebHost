@@ -81,9 +81,9 @@ public sealed class NativeWebView2Adapter : IWebViewAdapter
         };
 
         ConfigureSettings(_webView.Object, options);
-        RegisterNavigationReadyTracking(_webView.Object);
         RegisterCustomScheme(_webView.Object, options);
-        await _bridge.InitializeAsync(_webView.Object, cancellationToken);
+        await _bridge.InitializeAsync(_webView.Object, options, cancellationToken);
+        RegisterNavigationReadyTracking(_webView.Object);
         await InjectWindowChromeSupportAsync(_webView.Object, options, cancellationToken);
         await InjectBuiltInTitleBarAsync(_webView.Object, options, cancellationToken);
         await InjectHostCssAsync(_webView.Object, options, cancellationToken);
@@ -246,12 +246,56 @@ public sealed class NativeWebView2Adapter : IWebViewAdapter
     private void RegisterNavigationReadyTracking(ICoreWebView2 webView)
     {
         _navigationStartingHandler = new CoreWebView2NavigationStartingEventHandler(
-            (_, _) => _bridge.SetDocumentReady(false));
+            (_, args) => _bridge.SetDocumentReady(false, TryGetNavigationUri(args)));
         webView.add_NavigationStarting(_navigationStartingHandler, ref _navigationStartingToken).ThrowOnError();
 
         _navigationCompletedHandler = new CoreWebView2NavigationCompletedEventHandler(
-            (_, _) => _bridge.SetDocumentReady(true));
+            (_, _) => _bridge.SetDocumentReady(true, TryGetCurrentSource(webView)));
         webView.add_NavigationCompleted(_navigationCompletedHandler, ref _navigationCompletedToken).ThrowOnError();
+    }
+
+    /// <summary>读取即将导航的顶层文档地址；读取失败时返回 null 并禁用该文档桥接。</summary>
+    private static string? TryGetNavigationUri(ICoreWebView2NavigationStartingEventArgs args)
+    {
+        PWSTR uri = default;
+        try
+        {
+            args.get_Uri(out uri).ThrowOnError();
+            return uri.Value == 0 ? null : uri.ToString();
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (uri.Value != 0)
+            {
+                Marshal.FreeCoTaskMem(uri.Value);
+            }
+        }
+    }
+
+    /// <summary>读取导航完成后的实际地址，覆盖服务端重定向带来的来源变化。</summary>
+    private static string? TryGetCurrentSource(ICoreWebView2 webView)
+    {
+        PWSTR source = default;
+        try
+        {
+            webView.get_Source(out source).ThrowOnError();
+            return source.Value == 0 ? null : source.ToString();
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (source.Value != 0)
+            {
+                Marshal.FreeCoTaskMem(source.Value);
+            }
+        }
     }
 
     private void UnregisterNavigationReadyTracking()

@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup Condition="'$(NativeWebHostRequireAdministrator)' == 'true' and '$(ApplicationManifest)' == ''">
+    <ApplicationManifest>$(MSBuildThisFileDirectory)NativeWebHost.Windows.RequireAdministrator.manifest</ApplicationManifest>
+  </PropertyGroup>
+</Project>
