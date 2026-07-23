@@ -228,10 +228,12 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
         }
     }
 
-    private Task AddScriptToExecuteOnDocumentCreatedAsync(
+    /// <summary>注册文档初始化脚本，并在原生回调完成前保持取消注册有效。</summary>
+    private async Task AddScriptToExecuteOnDocumentCreatedAsync(
         string script,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = cancellationToken.Register(
             static state => ((TaskCompletionSource)state!).TrySetCanceled(),
@@ -254,13 +256,15 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
         if (hr.IsError)
             tcs.TrySetException(Marshal.GetExceptionForHR(hr)!);
 
-        return tcs.Task;
+        await tcs.Task;
     }
 
-    private Task<string?> ExecuteScriptOnBridgeThreadAsync(
+    /// <summary>执行脚本并在原生回调完成前保持取消注册有效。</summary>
+    private async Task<string?> ExecuteScriptOnBridgeThreadAsync(
         string script,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = cancellationToken.Register(
             static state => ((TaskCompletionSource<string?>)state!).TrySetCanceled(),
@@ -282,7 +286,7 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
         if (hr.IsError)
             tcs.TrySetException(Marshal.GetExceptionForHR(hr)!);
 
-        return tcs.Task;
+        return await tcs.Task;
     }
 
     private void ThrowIfNotInitialized()

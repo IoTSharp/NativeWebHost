@@ -142,11 +142,13 @@ public sealed class NativeWebView2Adapter : IWebViewAdapter
         return ValueTask.CompletedTask;
     }
 
-    private static Task<ComObject<ICoreWebView2Environment>> CreateEnvironmentAsync(
+    /// <summary>创建 WebView2 环境，并在原生回调完成前保持取消注册有效。</summary>
+    private static async Task<ComObject<ICoreWebView2Environment>> CreateEnvironmentAsync(
         string userDataFolder,
         NativeWebHostOptions options,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var tcs = new TaskCompletionSource<ComObject<ICoreWebView2Environment>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = cancellationToken.Register(
@@ -168,7 +170,12 @@ public sealed class NativeWebView2Adapter : IWebViewAdapter
                         return;
                     }
 
-                    tcs.TrySetResult(new ComObject<ICoreWebView2Environment>(environment));
+                    var environmentObject = new ComObject<ICoreWebView2Environment>(environment);
+                    if (!tcs.TrySetResult(environmentObject))
+                    {
+                        // 取消可能先完成任务；迟到的 COM 对象必须由回调立即释放。
+                        environmentObject.Dispose();
+                    }
                 }
                 finally
                 {
@@ -182,7 +189,7 @@ public sealed class NativeWebView2Adapter : IWebViewAdapter
             tcs.TrySetException(Marshal.GetExceptionForHR(hr)!);
         }
 
-        return tcs.Task;
+        return await tcs.Task;
     }
 
     private static CoreWebView2EnvironmentOptions CreateEnvironmentOptions(NativeWebHostOptions options)
@@ -201,11 +208,13 @@ public sealed class NativeWebView2Adapter : IWebViewAdapter
         return environmentOptions;
     }
 
-    private static Task<ComObject<ICoreWebView2Controller>> CreateControllerAsync(
+    /// <summary>创建 WebView2 控制器，并在原生回调完成前保持取消注册有效。</summary>
+    private static async Task<ComObject<ICoreWebView2Controller>> CreateControllerAsync(
         ICoreWebView2Environment environment,
         nint parentWindow,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var tcs = new TaskCompletionSource<ComObject<ICoreWebView2Controller>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = cancellationToken.Register(
@@ -222,13 +231,18 @@ public sealed class NativeWebView2Adapter : IWebViewAdapter
                     return;
                 }
 
-                tcs.TrySetResult(new ComObject<ICoreWebView2Controller>(controller));
+                var controllerObject = new ComObject<ICoreWebView2Controller>(controller);
+                if (!tcs.TrySetResult(controllerObject))
+                {
+                    // 取消可能先完成任务；迟到的 COM 对象必须由回调立即释放。
+                    controllerObject.Dispose();
+                }
             }));
 
         if (hr.IsError)
             tcs.TrySetException(Marshal.GetExceptionForHR(hr)!);
 
-        return tcs.Task;
+        return await tcs.Task;
     }
 
     private static void ConfigureSettings(ICoreWebView2 webView, NativeWebHostOptions options)
