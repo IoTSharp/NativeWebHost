@@ -12,6 +12,8 @@ namespace NativeWebHost.Windows;
 public static class WindowsApplicationRegistration
 {
     private const string CurrentUserRunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string ProfileListKeyPath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList";
+    private const string UserShellFoldersKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders";
     private const string TaskSchemaNamespace = "http://schemas.microsoft.com/windows/2004/02/mit/task";
     private const string TaskPrincipalId = "Author";
     private const string UnlimitedExecutionTime = "PT0S";
@@ -96,6 +98,80 @@ public static class WindowsApplicationRegistration
         var normalizedTargetPath = NormalizePath(targetPath, nameof(targetPath));
         var normalizedShortcutDirectory = ResolveShortcutDirectory(shortcutDirectory);
         RemoveDesktopShortcutsCore(normalizedTargetPath, normalizedShortcutDirectory, null);
+    }
+
+    /// <summary>验证 SID 是否对应仍存在的本机管理员用户；系统查询故障继续抛出。</summary>
+    public static WindowsUserSidValidationResult ValidateLocalAdministratorUserSid(string? userSid)
+    {
+        if (string.IsNullOrWhiteSpace(userSid))
+        {
+            return new WindowsUserSidValidationResult(
+                WindowsUserSidValidationStatus.InvalidSid,
+                null);
+        }
+
+        string normalizedUserSid;
+        try
+        {
+            normalizedUserSid = NormalizeUserSid(userSid, nameof(userSid));
+        }
+        catch (ArgumentException)
+        {
+            return new WindowsUserSidValidationResult(
+                WindowsUserSidValidationStatus.InvalidSid,
+                null);
+        }
+
+        return new WindowsUserSidValidationResult(
+            WindowsAccountMembership.ValidateLocalAdministrator(normalizedUserSid),
+            normalizedUserSid);
+    }
+
+    /// <summary>按目标用户 SID 解析桌面目录；离线用户只能使用注册表中的可用信息。</summary>
+    public static string ResolveDesktopDirectory(string userSid)
+    {
+        var normalizedUserSid = NormalizeUserSid(userSid, nameof(userSid));
+        RejectServiceAccount(normalizedUserSid, nameof(userSid));
+
+        using var currentIdentity = WindowsIdentity.GetCurrent();
+        if (currentIdentity.User is not null
+            && currentIdentity.User.Equals(new SecurityIdentifier(normalizedUserSid)))
+        {
+            var currentDesktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (!string.IsNullOrWhiteSpace(currentDesktop))
+            {
+                return Path.GetFullPath(currentDesktop);
+            }
+        }
+
+        using var users = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Default);
+        using var userShellFolders = users.OpenSubKey(
+            $@"{normalizedUserSid}\{UserShellFoldersKeyPath}",
+            writable: false);
+        var configuredDesktop = userShellFolders?.GetValue(
+            "Desktop",
+            null,
+            RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+        if (!string.IsNullOrWhiteSpace(configuredDesktop))
+        {
+            var resolvedDesktop = configuredDesktop.Trim();
+            if (resolvedDesktop.Contains("%USERPROFILE%", StringComparison.OrdinalIgnoreCase))
+            {
+                resolvedDesktop = resolvedDesktop.Replace(
+                    "%USERPROFILE%",
+                    ResolveUserProfileDirectory(normalizedUserSid),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+
+            // 其他变量属于目标用户环境，不能用 SYSTEM 或当前管理员环境代为展开。
+            if (!resolvedDesktop.Contains('%') && Path.IsPathFullyQualified(resolvedDesktop))
+            {
+                return Path.GetFullPath(resolvedDesktop);
+            }
+        }
+
+        var profileDirectory = ResolveUserProfileDirectory(normalizedUserSid);
+        return Path.Combine(profileDirectory, "Desktop");
     }
 
     /// <summary>注册目标用户登录时以最高权限交互运行的计划任务，并回读任务配置进行校验。</summary>
@@ -221,21 +297,107 @@ public static class WindowsApplicationRegistration
         var userSid = string.IsNullOrWhiteSpace(configuredUserSid)
             ? GetCurrentUserSid()
             : configuredUserSid.Trim();
-        string normalizedUserSid;
+        var validation = ValidateLocalAdministratorUserSid(userSid);
+        if (!validation.IsValid || validation.NormalizedUserSid is null)
+        {
+            throw new ArgumentException(
+                GetUserSidValidationError(validation.Status),
+                nameof(configuredUserSid));
+        }
+
+        return validation.NormalizedUserSid;
+    }
+
+    /// <summary>把 SID 校验状态转换为面向任务注册调用方的明确错误。</summary>
+    private static string GetUserSidValidationError(WindowsUserSidValidationStatus status)
+        => status switch
+        {
+            WindowsUserSidValidationStatus.InvalidSid => "登录计划任务的 UserSid 不是有效的 Windows SID。",
+            WindowsUserSidValidationStatus.AccountNotFound => "登录计划任务的 UserSid 没有对应的 Windows 账户。",
+            WindowsUserSidValidationStatus.NotUserAccount => "登录计划任务的 UserSid 必须对应 Windows 用户账户。",
+            WindowsUserSidValidationStatus.ServiceAccount => "登录计划任务不能使用 Windows 内置服务账户。",
+            WindowsUserSidValidationStatus.NotLocalAdministrator => "登录计划任务的目标用户必须属于本机 Administrators 组。",
+            _ => "登录计划任务的 UserSid 校验失败。"
+        };
+
+    /// <summary>把 Windows SID 统一为规范文本，并为公开入口保留明确的参数错误。</summary>
+    private static string NormalizeUserSid(string userSid, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(userSid))
+        {
+            throw new ArgumentException("Windows 用户 SID 不能为空。", parameterName);
+        }
+
         try
         {
-            normalizedUserSid = new SecurityIdentifier(userSid).Value;
+            return new SecurityIdentifier(userSid.Trim()).Value;
         }
         catch (ArgumentException exception)
         {
             throw new ArgumentException(
-                "任务目标 UserSid 必须是有效的 Windows SID。",
-                nameof(configuredUserSid),
+                "Windows 用户 SID 必须是有效的 Windows SID。",
+                parameterName,
                 exception);
         }
+    }
 
-        WindowsAccountMembership.EnsureLocalAdministrator(normalizedUserSid);
-        return normalizedUserSid;
+    /// <summary>拒绝没有交互桌面的内置服务账户。</summary>
+    private static void RejectServiceAccount(string userSid, string parameterName)
+    {
+        var securityIdentifier = new SecurityIdentifier(userSid);
+        if (securityIdentifier.IsWellKnown(WellKnownSidType.LocalSystemSid)
+            || securityIdentifier.IsWellKnown(WellKnownSidType.LocalServiceSid)
+            || securityIdentifier.IsWellKnown(WellKnownSidType.NetworkServiceSid))
+        {
+            throw new ArgumentException("桌面目录不能属于 Windows 内置服务账户。", parameterName);
+        }
+    }
+
+    /// <summary>从机器级 ProfileList 读取指定 SID 的用户配置文件根目录。</summary>
+    private static string ResolveUserProfileDirectory(string userSid)
+    {
+        using var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+        using var profile = localMachine.OpenSubKey($@"{ProfileListKeyPath}\{userSid}", writable: false);
+        var configuredPath = profile?.GetValue(
+            "ProfileImagePath",
+            null,
+            RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+        if (string.IsNullOrWhiteSpace(configuredPath))
+        {
+            throw new InvalidOperationException($"无法找到 Windows 用户配置文件：{userSid}");
+        }
+
+        var expandedPath = ExpandMachineProfilePath(configuredPath.Trim());
+        if (!Path.IsPathFullyQualified(expandedPath))
+        {
+            throw new InvalidOperationException($"Windows 用户配置文件不是绝对路径：{userSid}");
+        }
+
+        return Path.GetFullPath(expandedPath);
+    }
+
+    /// <summary>只展开 ProfileList 中可靠的机器变量，拒绝借用当前进程的用户环境。</summary>
+    private static string ExpandMachineProfilePath(string configuredPath)
+    {
+        var windowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var systemDrive = Path.GetPathRoot(windowsDirectory)?.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar);
+        if (string.IsNullOrWhiteSpace(windowsDirectory) || string.IsNullOrWhiteSpace(systemDrive))
+        {
+            throw new InvalidOperationException("无法取得 Windows 系统目录。");
+        }
+
+        var expandedPath = configuredPath
+            .Replace("%SystemDrive%", systemDrive, StringComparison.OrdinalIgnoreCase)
+            .Replace("%SystemRoot%", windowsDirectory, StringComparison.OrdinalIgnoreCase)
+            .Replace("%windir%", windowsDirectory, StringComparison.OrdinalIgnoreCase);
+        if (expandedPath.Contains('%'))
+        {
+            throw new InvalidOperationException("Windows 用户配置文件包含无法安全展开的用户环境变量。");
+        }
+
+        return expandedPath;
     }
 
     /// <summary>取得当前 Windows 令牌对应的 SID，确保任务只在同一用户登录时触发。</summary>

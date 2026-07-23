@@ -12,35 +12,43 @@ internal static unsafe partial class WindowsAccountMembership
     private const uint IncludeIndirectMembership = 0x00000001;
     private const uint NetApiSuccess = 0;
     private const int ErrorInsufficientBuffer = 122;
+    private const int ErrorNoneMapped = 1332;
     private const int SidTypeUser = 1;
     private const string BuiltinAdministratorsSid = "S-1-5-32-544";
     private const string LocalSystemSid = "S-1-5-18";
     private const string LocalServiceSid = "S-1-5-19";
     private const string NetworkServiceSid = "S-1-5-20";
 
-    /// <summary>拒绝服务账户，并确认目标用户直接或间接属于本机 Administrators。</summary>
-    internal static void EnsureLocalAdministrator(string userSid)
+    /// <summary>区分可接管的无效账户；原生查询故障继续抛出，禁止误换 owner。</summary>
+    internal static WindowsUserSidValidationStatus ValidateLocalAdministrator(string userSid)
     {
         var securityIdentifier = new SecurityIdentifier(userSid);
         if (IsServiceAccount(securityIdentifier.Value))
         {
-            throw new ArgumentException("登录计划任务不能使用 Windows 内置服务账户。", nameof(userSid));
+            return WindowsUserSidValidationStatus.ServiceAccount;
         }
 
-        var userAccount = ResolveAccountName(securityIdentifier);
+        var userAccount = ResolveAccountName(securityIdentifier, allowUnmapped: true);
+        if (userAccount is null)
+        {
+            return WindowsUserSidValidationStatus.AccountNotFound;
+        }
+
         if (userAccount.SidType != SidTypeUser)
         {
-            throw new ArgumentException("登录计划任务的 UserSid 必须对应 Windows 用户账户。", nameof(userSid));
+            return WindowsUserSidValidationStatus.NotUserAccount;
         }
 
         var administratorsAccount = ResolveAccountName(
-            new SecurityIdentifier(BuiltinAdministratorsSid));
+            new SecurityIdentifier(BuiltinAdministratorsSid),
+            allowUnmapped: false)
+            ?? throw new InvalidOperationException("无法解析 Windows 内置 Administrators 组。");
         if (!IsMemberOfLocalGroup(userAccount.QualifiedName, administratorsAccount.Name))
         {
-            throw new ArgumentException(
-                "登录计划任务的目标用户必须属于本机 Administrators 组。",
-                nameof(userSid));
+            return WindowsUserSidValidationStatus.NotLocalAdministrator;
         }
+
+        return WindowsUserSidValidationStatus.Valid;
     }
 
     /// <summary>按固定 SID 拒绝不会拥有交互式桌面的三个 Windows 服务账户。</summary>
@@ -50,7 +58,9 @@ internal static unsafe partial class WindowsAccountMembership
             || string.Equals(userSid, NetworkServiceSid, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>通过 SID 解析本地化账户名称，不依赖系统显示语言。</summary>
-    private static ResolvedAccountName ResolveAccountName(SecurityIdentifier securityIdentifier)
+    private static ResolvedAccountName? ResolveAccountName(
+        SecurityIdentifier securityIdentifier,
+        bool allowUnmapped)
     {
         var sidBytes = new byte[securityIdentifier.BinaryLength];
         securityIdentifier.GetBinaryForm(sidBytes, 0);
@@ -71,6 +81,11 @@ internal static unsafe partial class WindowsAccountMembership
             var firstError = Marshal.GetLastPInvokeError();
             if (firstResult == 0 && firstError != ErrorInsufficientBuffer)
             {
+                if (allowUnmapped && firstError == ErrorNoneMapped)
+                {
+                    return null;
+                }
+
                 throw new Win32Exception(firstError, $"无法解析 Windows SID：{securityIdentifier.Value}");
             }
 
@@ -93,8 +108,14 @@ internal static unsafe partial class WindowsAccountMembership
                         ref domainLength,
                         out sidType) == 0)
                 {
+                    var lookupError = Marshal.GetLastPInvokeError();
+                    if (allowUnmapped && lookupError == ErrorNoneMapped)
+                    {
+                        return null;
+                    }
+
                     throw new Win32Exception(
-                        Marshal.GetLastPInvokeError(),
+                        lookupError,
                         $"无法解析 Windows SID：{securityIdentifier.Value}");
                 }
             }
