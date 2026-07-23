@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Closed the task-definition write handle before invoking `schtasks.exe`, preventing MSI autostart registration from failing with a sharing violation.
+
 ### Changed
 
 - Renamed the public framework family to `NativeWebHost`.

@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NativeWebHost.Mac", "src\Na
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NativeWebHost.Android", "src\NativeWebHost.Android\NativeWebHost.Android.csproj", "{F8F739F2-D7FB-4DCB-A6CF-05F1D341F78A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NativeWebHost.Windows.Tests", "tests\NativeWebHost.Windows.Tests\NativeWebHost.Windows.Tests.csproj", "{66DA8924-C2B8-45ED-8E8F-DA1910465989}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{F8F739F2-D7FB-4DCB-A6CF-05F1D341F78A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F8F739F2-D7FB-4DCB-A6CF-05F1D341F78A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F8F739F2-D7FB-4DCB-A6CF-05F1D341F78A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{66DA8924-C2B8-45ED-8E8F-DA1910465989}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{66DA8924-C2B8-45ED-8E8F-DA1910465989}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{66DA8924-C2B8-45ED-8E8F-DA1910465989}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{66DA8924-C2B8-45ED-8E8F-DA1910465989}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

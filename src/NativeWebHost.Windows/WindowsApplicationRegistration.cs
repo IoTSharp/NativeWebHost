@@ -411,29 +411,69 @@ public static class WindowsApplicationRegistration
     /// <summary>使用显式任务 XML 注册无限时长、允许电池运行的最高权限交互式登录任务。</summary>
     private static void RegisterElevatedLogonTask(NormalizedElevatedLogonTaskOptions options)
     {
-        var temporaryXmlPath = Path.Combine(
-            Path.GetTempPath(),
-            $"NativeWebHost.Task.{Guid.NewGuid():N}.xml");
-        var temporaryFileCreated = false;
-        try
-        {
-            // 注册命令执行期间保持文件句柄并仅允许读取，避免 XML 被并发替换。
-            using (var stream = new FileStream(
-                temporaryXmlPath,
-                FileMode.CreateNew,
-                FileAccess.ReadWrite,
-                FileShare.Read))
+        using var taskXml = new MemoryStream();
+        WriteElevatedLogonTaskXml(taskXml, options);
+        UseVerifiedTemporaryTaskDefinition(
+            taskXml.ToArray(),
+            temporaryXmlPath =>
             {
-                temporaryFileCreated = true;
-                WriteElevatedLogonTaskXml(stream, options);
-                stream.Flush(flushToDisk: true);
                 _ = RunTaskScheduler(
                     throwOnFailure: true,
                     "/Create",
                     "/TN", options.TaskName,
                     "/XML", temporaryXmlPath,
                     "/F");
+            });
+    }
+
+    /// <summary>关闭写句柄后校验并只读锁定临时任务 XML，再交给外部读取方使用。</summary>
+    internal static void UseVerifiedTemporaryTaskDefinition(
+        ReadOnlyMemory<byte> taskDefinition,
+        Action<string> useTaskDefinition)
+    {
+        ArgumentNullException.ThrowIfNull(useTaskDefinition);
+        if (taskDefinition.IsEmpty)
+        {
+            throw new ArgumentException("计划任务 XML 不能为空。", nameof(taskDefinition));
+        }
+
+        var expectedBytes = taskDefinition.ToArray();
+        var temporaryXmlPath = Path.Combine(
+            Path.GetTempPath(),
+            $"NativeWebHost.Task.{Guid.NewGuid():N}.xml");
+        var temporaryFileCreated = false;
+        try
+        {
+            // schtasks 不接受仍有写访问的文件；必须完成落盘并关闭写句柄后再打开只读守卫。
+            using (var stream = new FileStream(
+                temporaryXmlPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None))
+            {
+                temporaryFileCreated = true;
+                stream.Write(expectedBytes);
+                stream.Flush(flushToDisk: true);
             }
+
+            using var readGuard = new FileStream(
+                temporaryXmlPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read);
+            if (readGuard.Length != expectedBytes.Length)
+            {
+                throw new InvalidOperationException("临时计划任务 XML 在注册前发生变化。");
+            }
+
+            var actualBytes = new byte[expectedBytes.Length];
+            readGuard.ReadExactly(actualBytes);
+            if (!actualBytes.AsSpan().SequenceEqual(expectedBytes))
+            {
+                throw new InvalidOperationException("临时计划任务 XML 在注册前发生变化。");
+            }
+
+            useTaskDefinition(temporaryXmlPath);
         }
         finally
         {

@@ -25,6 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="NativeWebHost.Windows.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="WebView2\Scripts\native-webview2-bridge.js" LogicalName="NativeWebHost.Windows.WebView2.Scripts.native-webview2-bridge.js" />
     <EmbeddedResource Include="$(PkgMicrosoft_Web_WebView2)\runtimes\win-x64\native\WebView2Loader.dll" LogicalName="runtimes.win-x64.native.WebView2Loader.dll" />
     <EmbeddedResource Include="$(PkgMicrosoft_Web_WebView2)\runtimes\win-x86\native\WebView2Loader.dll" LogicalName="runtimes.win-x86.native.WebView2Loader.dll" />

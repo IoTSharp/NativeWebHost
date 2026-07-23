@@ -33,7 +33,8 @@ jobs:
           $projects = @(
             "src\NativeWebHost\NativeWebHost.csproj",
             "src\NativeWebHost.Windows\NativeWebHost.Windows.csproj",
-            "src\NativeWebHost.Linux\NativeWebHost.Linux.csproj"
+            "src\NativeWebHost.Linux\NativeWebHost.Linux.csproj",
+            "tests\NativeWebHost.Windows.Tests\NativeWebHost.Windows.Tests.csproj"
           )
 
           foreach ($project in $projects) {
@@ -58,6 +59,10 @@ jobs:
               exit $LASTEXITCODE
             }
           }
+
+      - name: Test
+        shell: pwsh
+        run: dotnet test tests\NativeWebHost.Windows.Tests\NativeWebHost.Windows.Tests.csproj -c $env:CONFIGURATION --no-restore -p:ContinuousIntegrationBuild=true
 
   build-android:
     name: Build Android Package
