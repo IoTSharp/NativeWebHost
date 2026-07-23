@@ -280,7 +280,8 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
                     return;
                 }
 
-                tcs.TrySetResult(ToStringAndFree(json));
+                // ExecuteScript 返回 IDL 标记为 [in] 的借用字符串，回调方只能复制，不能释放。
+                tcs.TrySetResult(ToBorrowedString(json));
             }));
 
         if (hr.IsError)
@@ -346,6 +347,11 @@ internal sealed class NativeWebView2JsBridge : IJsBridge, IDisposable
         return tcs.Task;
     }
 
+    /// <summary>复制 WebView2 回调借用的字符串，不接管或释放其原生内存。</summary>
+    internal static string? ToBorrowedString(PWSTR value)
+        => value.Value == 0 ? null : value.ToString();
+
+    /// <summary>复制调用方取得所有权的 COM 字符串，并使用匹配的分配器释放。</summary>
     private static string? ToStringAndFree(PWSTR value)
     {
         if (value.Value == 0)
