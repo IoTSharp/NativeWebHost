@@ -10,6 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 
 - Closed the task-definition write handle before invoking `schtasks.exe`, preventing MSI autostart registration from failing with a sharing violation.
+- Validated exported logon tasks by Task Scheduler semantics, including normalized account names and omitted schema defaults.
 
 ### Changed
 

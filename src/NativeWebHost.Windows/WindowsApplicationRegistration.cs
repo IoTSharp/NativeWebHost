@@ -179,7 +179,8 @@ public static class WindowsApplicationRegistration
     {
         ArgumentNullException.ThrowIfNull(options);
         var normalizedOptions = NormalizeLogonTaskOptions(options);
-        if (!VerifyElevatedLogonTask(normalizedOptions))
+        var verification = VerifyElevatedLogonTask(normalizedOptions);
+        if (!verification.IsValid)
         {
             if (!IsCurrentProcessAdministrator())
             {
@@ -188,9 +189,11 @@ public static class WindowsApplicationRegistration
 
             RegisterElevatedLogonTask(normalizedOptions);
 
-            if (!VerifyElevatedLogonTask(normalizedOptions))
+            verification = VerifyElevatedLogonTask(normalizedOptions);
+            if (!verification.IsValid)
             {
-                throw new InvalidOperationException("登录计划任务已创建，但回读配置未通过最高权限交互启动校验。");
+                throw new InvalidOperationException(
+                    $"登录计划任务已创建，但回读配置未通过最高权限交互启动校验。原因：{verification.FailureReason}");
             }
         }
 
@@ -202,7 +205,7 @@ public static class WindowsApplicationRegistration
     {
         ArgumentNullException.ThrowIfNull(options);
         var normalizedOptions = NormalizeLogonTaskOptions(options);
-        return VerifyElevatedLogonTask(normalizedOptions);
+        return VerifyElevatedLogonTask(normalizedOptions).IsValid;
     }
 
     /// <summary>幂等删除指定的最高权限登录计划任务。</summary>
@@ -235,17 +238,28 @@ public static class WindowsApplicationRegistration
         }
     }
 
-    /// <summary>查询任务 XML，并按当前用户、触发器、权限、运行设置和启动命令进行严格校验。</summary>
-    private static bool VerifyElevatedLogonTask(NormalizedElevatedLogonTaskOptions options)
+    /// <summary>查询任务 XML，并返回首个查询、解析或语义校验错误。</summary>
+    private static (bool IsValid, string FailureReason) VerifyElevatedLogonTask(
+        NormalizedElevatedLogonTaskOptions options)
     {
         var result = RunTaskScheduler(
             throwOnFailure: false,
             "/Query",
             "/TN", options.TaskName,
             "/XML");
-        if (result.ExitCode != 0 || string.IsNullOrWhiteSpace(result.StandardOutput))
+        if (result.ExitCode != 0)
         {
-            return false;
+            var details = $"{result.StandardError}{result.StandardOutput}".Trim();
+            return (
+                false,
+                details.Length == 0
+                    ? $"任务查询失败（退出码 {result.ExitCode}）。"
+                    : $"任务查询失败（退出码 {result.ExitCode}）：{details}");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.StandardOutput))
+        {
+            return (false, "任务查询未返回 XML。");
         }
 
         try
@@ -255,12 +269,12 @@ public static class WindowsApplicationRegistration
         catch (Exception exception) when (
             exception is XmlException or InvalidOperationException or ArgumentException)
         {
-            return false;
+            return (false, $"任务 XML 无法解析：{exception.Message}");
         }
     }
 
     /// <summary>安全解析任务 XML 并交给结构化校验器，禁止 DTD 和外部实体解析。</summary>
-    private static bool VerifyElevatedLogonTaskXml(
+    private static (bool IsValid, string FailureReason) VerifyElevatedLogonTaskXml(
         string taskXml,
         NormalizedElevatedLogonTaskOptions options)
     {
@@ -274,9 +288,26 @@ public static class WindowsApplicationRegistration
                 IgnoreComments = true,
                 IgnoreWhitespace = true
             });
-        return IsExpectedElevatedLogonTask(
+        return ValidateExpectedElevatedLogonTask(
             XDocument.Load(reader, LoadOptions.None),
             options);
+    }
+
+    /// <summary>不调用任务计划程序，按给定期望值校验回读 XML，供兼容性测试复用。</summary>
+    internal static (bool IsValid, string FailureReason) VerifyElevatedLogonTaskXml(
+        string taskXml,
+        string executablePath,
+        string userSid,
+        IReadOnlyList<string>? arguments)
+    {
+        return VerifyElevatedLogonTaskXml(
+            taskXml,
+            new NormalizedElevatedLogonTaskOptions(
+                string.Empty,
+                NormalizePath(executablePath, nameof(executablePath)),
+                NormalizeUserSid(userSid, nameof(userSid)),
+                NormalizeArguments(arguments),
+                null));
     }
 
     /// <summary>复制并规范化任务配置，避免可变集合在注册和回读期间改变。</summary>
@@ -558,8 +589,8 @@ public static class WindowsApplicationRegistration
                         new XElement(taskNamespace + "WorkingDirectory", workingDirectory)))));
     }
 
-    /// <summary>严格比对任务 XML 中唯一的登录触发器、Principal、设置和执行动作。</summary>
-    private static bool IsExpectedElevatedLogonTask(
+    /// <summary>按任务计划程序的回读语义校验唯一触发器、Principal、设置和执行动作。</summary>
+    private static (bool IsValid, string FailureReason) ValidateExpectedElevatedLogonTask(
         XDocument document,
         NormalizedElevatedLogonTaskOptions options)
     {
@@ -567,108 +598,185 @@ public static class WindowsApplicationRegistration
         var root = document.Root;
         if (root?.Name != taskNamespace + "Task")
         {
-            return false;
+            return (false, "任务 XML 根元素或命名空间不正确。");
         }
 
         var triggers = GetSingleChild(root, taskNamespace + "Triggers");
         var trigger = GetOnlyChild(triggers, taskNamespace + "LogonTrigger");
+        if (trigger is null)
+        {
+            return (false, "任务必须且只能包含一个登录触发器。");
+        }
+
         var principals = GetSingleChild(root, taskNamespace + "Principals");
         var principal = GetOnlyChild(principals, taskNamespace + "Principal");
+        if (principal is null)
+        {
+            return (false, "任务必须且只能包含一个 Principal。");
+        }
+
         var settings = GetSingleChild(root, taskNamespace + "Settings");
+        if (settings is null)
+        {
+            return (false, "任务缺少运行设置。");
+        }
+
         var actions = GetSingleChild(root, taskNamespace + "Actions");
         var executeAction = GetOnlyChild(actions, taskNamespace + "Exec");
-        if (trigger is null
-            || principal is null
-            || settings is null
-            || actions is null
-            || executeAction is null)
+        if (actions is null || executeAction is null)
         {
-            return false;
+            return (false, "任务必须且只能包含一个程序执行动作。");
         }
 
         var principalId = principal.Attribute("id")?.Value.Trim();
         var actionContext = actions.Attribute("Context")?.Value.Trim();
         var expectedWorkingDirectory = Path.GetDirectoryName(options.ExecutablePath);
         if (string.IsNullOrWhiteSpace(principalId)
-            || !string.Equals(principalId, actionContext, StringComparison.Ordinal)
-            || !HasOnlyExpectedChildren(
+            || !string.Equals(principalId, actionContext, StringComparison.Ordinal))
+        {
+            return (false, "执行动作没有绑定到同一个 Principal。");
+        }
+
+        // Windows 会省略 Enabled=true，并把登录触发器用户从 SID 规范化为账户名。
+        if (!HasOnlyAllowedSingleChildren(
                 trigger,
                 taskNamespace + "Enabled",
-                taskNamespace + "UserId")
-            || !HasBooleanValue(trigger, taskNamespace + "Enabled", expected: true)
-            || !SidsEqual(GetSingleChildValue(trigger, taskNamespace + "UserId"), options.UserSid)
-            || !SidsEqual(GetSingleChildValue(principal, taskNamespace + "UserId"), options.UserSid)
-            || !string.Equals(
-                GetSingleChildValue(principal, taskNamespace + "LogonType"),
+                taskNamespace + "UserId"))
+        {
+            return (false, "登录触发器包含延迟、边界、重复字段或其他未预期配置。");
+        }
+
+        if (!HasBooleanValue(
+                trigger,
+                taskNamespace + "Enabled",
+                expected: true,
+                defaultValue: true))
+        {
+            return (false, "登录触发器未启用。");
+        }
+
+        if (!UserIdentifiersEqual(
+                GetSingleChildValue(trigger, taskNamespace + "UserId"),
+                options.UserSid))
+        {
+            return (false, "登录触发器用户与目标用户不一致。");
+        }
+
+        if (!UserIdentifiersEqual(
+                GetSingleChildValue(principal, taskNamespace + "UserId"),
+                options.UserSid))
+        {
+            return (false, "Principal 用户与目标用户不一致。");
+        }
+
+        if (!HasTextValue(
+                principal,
+                taskNamespace + "LogonType",
                 "InteractiveToken",
-                StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(
-                GetSingleChildValue(principal, taskNamespace + "RunLevel"),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, "Principal 不是交互式令牌登录。");
+        }
+
+        if (!HasTextValue(
+                principal,
+                taskNamespace + "RunLevel",
                 "HighestAvailable",
-                StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(
-                GetSingleChildValue(settings, taskNamespace + "MultipleInstancesPolicy"),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, "Principal 没有使用最高可用权限。");
+        }
+
+        if (!HasTextValue(
+                settings,
+                taskNamespace + "MultipleInstancesPolicy",
                 "IgnoreNew",
-                StringComparison.OrdinalIgnoreCase)
-            || !HasBooleanValue(settings, taskNamespace + "Enabled", expected: true)
-            || !HasBooleanValue(
+                StringComparison.OrdinalIgnoreCase,
+                defaultValue: "IgnoreNew"))
+        {
+            return (false, "任务的多实例策略不是 IgnoreNew。");
+        }
+
+        // 只对任务计划程序 schema 明确定义的默认值接受节点缺失。
+        (string Name, bool Expected, bool DefaultValue)[] booleanSettings =
+        [
+            ("Enabled", true, true),
+            ("DisallowStartIfOnBatteries", false, true),
+            ("StopIfGoingOnBatteries", false, true),
+            ("AllowHardTerminate", true, true),
+            ("StartWhenAvailable", true, false),
+            ("RunOnlyIfNetworkAvailable", false, false),
+            ("AllowStartOnDemand", true, true),
+            ("Hidden", false, false),
+            ("RunOnlyIfIdle", false, false),
+            ("WakeToRun", false, false)
+        ];
+        foreach (var setting in booleanSettings)
+        {
+            if (!HasBooleanValue(
+                    settings,
+                    taskNamespace + setting.Name,
+                    setting.Expected,
+                    setting.DefaultValue))
+            {
+                return (false, $"任务设置 {setting.Name} 与常驻客户端要求不一致。");
+            }
+        }
+
+        if (!HasDurationValue(
                 settings,
-                taskNamespace + "DisallowStartIfOnBatteries",
-                expected: false)
-            || !HasBooleanValue(
+                taskNamespace + "ExecutionTimeLimit",
+                TimeSpan.Zero))
+        {
+            return (false, "任务执行时限不是无限制。");
+        }
+
+        if (!HasTextValue(
                 settings,
-                taskNamespace + "StopIfGoingOnBatteries",
-                expected: false)
-            || !HasBooleanValue(settings, taskNamespace + "AllowHardTerminate", expected: true)
-            || !HasBooleanValue(settings, taskNamespace + "StartWhenAvailable", expected: true)
-            || !HasBooleanValue(
-                settings,
-                taskNamespace + "RunOnlyIfNetworkAvailable",
-                expected: false)
-            || !HasBooleanValue(settings, taskNamespace + "AllowStartOnDemand", expected: true)
-            || !HasBooleanValue(settings, taskNamespace + "Hidden", expected: false)
-            || !HasBooleanValue(settings, taskNamespace + "RunOnlyIfIdle", expected: false)
-            || !HasBooleanValue(settings, taskNamespace + "WakeToRun", expected: false)
-            || !string.Equals(
-                GetSingleChildValue(settings, taskNamespace + "ExecutionTimeLimit"),
-                UnlimitedExecutionTime,
-                StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(
-                GetSingleChildValue(settings, taskNamespace + "Priority"),
+                taskNamespace + "Priority",
                 "7",
-                StringComparison.Ordinal)
-            || !PathsEqual(
+                StringComparison.Ordinal,
+                defaultValue: "7"))
+        {
+            return (false, "任务优先级不是 7。");
+        }
+
+        if (!PathsEqual(
                 GetSingleChildValue(executeAction, taskNamespace + "Command"),
-                options.ExecutablePath)
-            || !TryGetOptionalChildValue(
+                options.ExecutablePath))
+        {
+            return (false, "任务启动程序与期望路径不一致。");
+        }
+
+        if (!TryGetOptionalChildValue(
                 executeAction,
                 taskNamespace + "Arguments",
                 out var actualArguments)
             || !string.Equals(
                 actualArguments,
                 JoinArguments(options.Arguments),
-                StringComparison.Ordinal)
-            || !PathsEqual(
+                StringComparison.Ordinal))
+        {
+            return (false, "任务启动参数与期望参数不一致。");
+        }
+
+        if (!PathsEqual(
                 GetSingleChildValue(executeAction, taskNamespace + "WorkingDirectory"),
                 expectedWorkingDirectory ?? string.Empty))
         {
-            return false;
+            return (false, "任务工作目录与期望目录不一致。");
         }
 
-        return true;
+        return (true, string.Empty);
     }
 
-    /// <summary>确认元素只包含各一个允许的直接子元素，拒绝登录延迟、边界和重复字段。</summary>
-    private static bool HasOnlyExpectedChildren(XElement parent, params XName[] expectedNames)
+    /// <summary>只允许给定直接子元素各出现一次，未出现的默认字段由后续语义校验处理。</summary>
+    private static bool HasOnlyAllowedSingleChildren(XElement parent, params XName[] allowedNames)
     {
-        if (parent.Elements().Count() != expectedNames.Length)
+        var seenNames = new HashSet<XName>();
+        foreach (var child in parent.Elements())
         {
-            return false;
-        }
-
-        foreach (var expectedName in expectedNames)
-        {
-            if (GetSingleChild(parent, expectedName) is null)
+            if (!allowedNames.Contains(child.Name) || !seenNames.Add(child.Name))
             {
                 return false;
             }
@@ -716,35 +824,59 @@ public static class WindowsApplicationRegistration
     private static string? GetSingleChildValue(XElement parent, XName childName)
         => GetSingleChild(parent, childName)?.Value.Trim();
 
-    /// <summary>读取可省略的唯一子元素；缺失等价于空字符串，重复则判定无效。</summary>
-    private static bool TryGetOptionalChildValue(
+    /// <summary>区分缺失、唯一和重复子元素；缺失返回 null，空元素保留为空字符串。</summary>
+    private static bool TryGetSingleChildValue(
         XElement parent,
         XName childName,
-        out string value)
+        out string? value)
     {
         XElement? result = null;
         foreach (var child in parent.Elements(childName))
         {
             if (result is not null)
             {
-                value = string.Empty;
+                value = null;
                 return false;
             }
 
             result = child;
         }
 
-        value = result?.Value.Trim() ?? string.Empty;
+        value = result?.Value.Trim();
         return true;
     }
 
-    /// <summary>按 XML 布尔语义校验唯一设置值。</summary>
-    private static bool HasBooleanValue(XElement parent, XName childName, bool expected)
+    /// <summary>读取可省略的唯一子元素；缺失等价于空字符串，重复则判定无效。</summary>
+    private static bool TryGetOptionalChildValue(
+        XElement parent,
+        XName childName,
+        out string value)
     {
-        var value = GetSingleChildValue(parent, childName);
-        if (value is null)
+        if (!TryGetSingleChildValue(parent, childName, out var optionalValue))
+        {
+            value = string.Empty;
+            return false;
+        }
+
+        value = optionalValue ?? string.Empty;
+        return true;
+    }
+
+    /// <summary>按 XML 布尔语义校验唯一值；节点缺失时只采用明确传入的 schema 默认值。</summary>
+    private static bool HasBooleanValue(
+        XElement parent,
+        XName childName,
+        bool expected,
+        bool defaultValue)
+    {
+        if (!TryGetSingleChildValue(parent, childName, out var value))
         {
             return false;
+        }
+
+        if (value is null)
+        {
+            return defaultValue == expected;
         }
 
         try
@@ -757,20 +889,84 @@ public static class WindowsApplicationRegistration
         }
     }
 
-    /// <summary>按 Windows SID 结构比较用户标识，拒绝任务中的账户名称或无效 SID。</summary>
-    private static bool SidsEqual(string? actualSid, string expectedSid)
+    /// <summary>校验唯一文本值，并在节点缺失时采用可选的 schema 默认值。</summary>
+    private static bool HasTextValue(
+        XElement parent,
+        XName childName,
+        string expected,
+        StringComparison comparison,
+        string? defaultValue = null)
     {
-        if (string.IsNullOrWhiteSpace(actualSid))
+        if (!TryGetSingleChildValue(parent, childName, out var value))
+        {
+            return false;
+        }
+
+        return string.Equals(value ?? defaultValue, expected, comparison);
+    }
+
+    /// <summary>按 XML duration 语义校验唯一时长，避免合法规范形式造成字面比较误判。</summary>
+    private static bool HasDurationValue(
+        XElement parent,
+        XName childName,
+        TimeSpan expected)
+    {
+        if (!TryGetSingleChildValue(parent, childName, out var value))
+        {
+            return false;
+        }
+
+        if (value is null)
         {
             return false;
         }
 
         try
         {
-            return new SecurityIdentifier(actualSid)
-                .Equals(new SecurityIdentifier(expectedSid));
+            return XmlConvert.ToTimeSpan(value) == expected;
+        }
+        catch (Exception exception) when (exception is FormatException or OverflowException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>把 SID 或 Windows 账户名解析为同一 SID 后比较，兼容任务计划程序的用户规范化。</summary>
+    private static bool UserIdentifiersEqual(string? actualUser, string expectedSid)
+    {
+        if (string.IsNullOrWhiteSpace(actualUser))
+        {
+            return false;
+        }
+
+        SecurityIdentifier expectedIdentifier;
+        try
+        {
+            expectedIdentifier = new SecurityIdentifier(expectedSid);
         }
         catch (ArgumentException)
+        {
+            return false;
+        }
+
+        var normalizedActualUser = actualUser.Trim();
+        try
+        {
+            return new SecurityIdentifier(normalizedActualUser).Equals(expectedIdentifier);
+        }
+        catch (ArgumentException)
+        {
+            // schtasks 常把登录触发器用户回读为 DOMAIN\User，继续按账户解析。
+        }
+
+        try
+        {
+            var translatedIdentifier = new NTAccount(normalizedActualUser)
+                .Translate(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            return translatedIdentifier?.Equals(expectedIdentifier) == true;
+        }
+        catch (Exception exception) when (
+            exception is IdentityNotMappedException or ArgumentException)
         {
             return false;
         }
