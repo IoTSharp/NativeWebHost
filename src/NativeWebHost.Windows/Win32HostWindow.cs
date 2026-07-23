@@ -367,6 +367,10 @@ internal sealed partial class Win32HostWindow : IHostWindow
             await _adapter.NavigateAsync(_options.StartUrl, _windowLifetime.Token);
             ShowMainWindow("first_navigation_completed");
         }
+        catch (OperationCanceledException) when (_windowLifetime.IsCancellationRequested)
+        {
+            // 初始化期间收到正常关闭请求时不应污染运行结果或显示错误对话框。
+        }
         catch (Exception ex)
         {
             _deferredError = ex;
