@@ -183,34 +183,6 @@ public static class WindowsApplicationRegistration
         }
     }
 
-    /// <summary>构造可供单元测试检查的任务 XML 文本，内容与实际注册文件使用同一结构。</summary>
-    internal static string BuildElevatedLogonTaskXml(WindowsElevatedLogonTaskOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        return BuildElevatedLogonTaskDocument(NormalizeLogonTaskOptions(options))
-            .ToString(SaveOptions.DisableFormatting);
-    }
-
-    /// <summary>使用生产校验规则验证一段任务 XML，便于覆盖篡改和异常配置场景。</summary>
-    internal static bool VerifyElevatedLogonTaskXml(
-        string taskXml,
-        WindowsElevatedLogonTaskOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(taskXml);
-        ArgumentNullException.ThrowIfNull(options);
-        try
-        {
-            return VerifyElevatedLogonTaskXml(
-                taskXml,
-                NormalizeLogonTaskOptions(options));
-        }
-        catch (Exception exception) when (
-            exception is XmlException or InvalidOperationException or ArgumentException)
-        {
-            return false;
-        }
-    }
-
     /// <summary>安全解析任务 XML 并交给结构化校验器，禁止 DTD 和外部实体解析。</summary>
     private static bool VerifyElevatedLogonTaskXml(
         string taskXml,
@@ -759,15 +731,14 @@ public static class WindowsApplicationRegistration
     }
 
     /// <summary>把独立参数编码为 Windows 命令行参数文本。</summary>
-    internal static string JoinArguments(IReadOnlyList<string>? arguments)
+    private static string JoinArguments(IReadOnlyList<string>? arguments)
         => string.Join(' ', NormalizeArguments(arguments)
-            .Select(argument => QuoteCommandLineArgument(argument, forceQuotes: false)));
+            .Select(QuoteCommandLineArgument));
 
     /// <summary>按照 CommandLineToArgvW 兼容规则转义一个 Windows 命令行参数。</summary>
-    private static string QuoteCommandLineArgument(string value, bool forceQuotes)
+    private static string QuoteCommandLineArgument(string value)
     {
-        if (!forceQuotes
-            && value.Length > 0
+        if (value.Length > 0
             && !value.Any(character => char.IsWhiteSpace(character) || character == '"'))
         {
             return value;
