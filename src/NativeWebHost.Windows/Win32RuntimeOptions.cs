@@ -18,6 +18,9 @@ public sealed class Win32RuntimeOptions
     /// <summary>自动启动计划任务名称；未指定时使用主窗口标题。</summary>
     public string? AutoStartTaskName { get; set; }
 
+    /// <summary>自动启动任务绑定的 Windows 用户 SID；未指定时使用当前进程用户。</summary>
+    public string? AutoStartUserSid { get; set; }
+
     /// <summary>自动启动计划任务传递给应用程序的参数。</summary>
     public IReadOnlyList<string> AutoStartArguments { get; set; } = Array.Empty<string>();
 
@@ -29,6 +32,9 @@ public sealed class Win32RuntimeOptions
 
     /// <summary>桌面快捷方式名称；未指定时使用主窗口标题。</summary>
     public string? DesktopShortcutName { get; set; }
+
+    /// <summary>桌面快捷方式目录；未指定时使用当前进程用户桌面。</summary>
+    public string? DesktopShortcutDirectory { get; set; }
 
     /// <summary>桌面快捷方式启动应用时传递的参数。</summary>
     public IReadOnlyList<string> DesktopShortcutArguments { get; set; } = Array.Empty<string>();

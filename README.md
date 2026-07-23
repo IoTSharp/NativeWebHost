@@ -54,9 +54,11 @@ var runtime = new Win32Runtime(new Win32RuntimeOptions
     RequireAdministrator = true,
     EnsureElevatedAutoStart = true,
     AutoStartTaskName = "My App",
+    AutoStartUserSid = null, // 安装器可传入持久化的目标用户 SID。
     AutoStartArguments = ["--autostart"],
     EnsureDesktopShortcut = true,
-    DesktopShortcutName = "My App"
+    DesktopShortcutName = "My App",
+    DesktopShortcutDirectory = null // 安装器可传入同一用户的桌面目录。
 });
 ```
 

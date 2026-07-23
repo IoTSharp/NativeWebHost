@@ -150,6 +150,7 @@ public sealed class Win32Runtime : IMultiWindowDesktopRuntime
                 {
                     TaskName = ResolveConfiguredName(_runtimeOptions.AutoStartTaskName, hostOptions.Title),
                     ExecutablePath = applicationPath,
+                    UserSid = _runtimeOptions.AutoStartUserSid,
                     Arguments = _runtimeOptions.AutoStartArguments,
                     ObsoleteRunKeyValueName = _runtimeOptions.ObsoleteRunKeyValueName
                 });
@@ -162,6 +163,7 @@ public sealed class Win32Runtime : IMultiWindowDesktopRuntime
                 {
                     ShortcutName = ResolveConfiguredName(_runtimeOptions.DesktopShortcutName, hostOptions.Title),
                     TargetPath = applicationPath,
+                    ShortcutDirectory = _runtimeOptions.DesktopShortcutDirectory,
                     Arguments = _runtimeOptions.DesktopShortcutArguments,
                     WorkingDirectory = _runtimeOptions.DesktopShortcutWorkingDirectory,
                     IconPath = _runtimeOptions.DesktopShortcutIconPath ?? hostOptions.IconPath ?? applicationPath,
